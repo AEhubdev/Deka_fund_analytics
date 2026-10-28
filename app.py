@@ -12,24 +12,54 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- LOAD AND CACHE DATA ---
+# --- ROBUST DATA LOADING WITH UPLOADER FALLBACK ---
 
 
 @st.cache_data
-def load_fund_data():
-  script_dir = os.path.dirname(os.path.abspath(__file__))
-  file_path = os.path.join(script_dir, "Trainee-Aufgabe_2026.xlsx")
+def load_excel_file(uploaded_file=None):
+  if uploaded_file is not None:
+    df_raw = pd.read_excel(uploaded_file, sheet_name=0)
+  else:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(script_dir, "Trainee-Ausgabe_2026.xlsx")
 
-  df_raw = pd.read_excel(file_path, sheet_name="Tabelle1")
+    # Fallback search in current working directory if not found in script dir
+    if not os.path.exists(file_path):
+      if os.path.exists("Trainee-Ausgabe_2026.xlsx"):
+        file_path = "Trainee-Ausgabe_2026.xlsx"
+      else:
+        # Search for any xlsx file in directory
+        xlsx_files = [f for f in os.listdir(script_dir) if f.endswith(".xlsx")]
+        if xlsx_files:
+          file_path = os.path.join(script_dir, xlsx_files[0])
+        else:
+          return None
+
+    df_raw = pd.read_excel(file_path, sheet_name=0)
+
   data = df_raw.iloc[2:].copy()
   data.columns = ["Date", "Price"]
   data["Date"] = pd.to_datetime(data["Date"])
   data["Price"] = pd.to_numeric(data["Price"])
-  data = data.sort_values("Date").reset_index(drop=True)
+  data = data.dropna(subset=["Price"]).sort_values("Date").reset_index(drop=True)
   return data
 
 
-df = load_fund_data()
+# --- SIDEBAR CONFIGURATION & UPLOADER ---
+st.sidebar.title("Navigation & Data")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload Trainee-Aufgabe_2026.xlsx (if missing)", type=["xlsx"]
+)
+
+df = load_excel_file(uploaded_file)
+
+if df is None or df.empty:
+  st.error(
+      "⚠️ **Excel file not found!** Please ensure `Trainee-Ausgabe_2026.xlsx` is"
+      " pushed to your GitHub repository in the same folder as `app.py`, or"
+      " upload it using the sidebar uploader above."
+  )
+  st.stop()
 
 # --- CALCULATE METRICS & BENCHMARK ---
 start_price = df.iloc[0]["Price"]
@@ -47,7 +77,7 @@ df["Drawdown"] = (df["Price"] - df["Cumulative_Max"]) / df["Cumulative_Max"]
 max_drawdown = df["Drawdown"].min() * 100
 annualized_volatility = df["Daily_Return"].std() * np.sqrt(252) * 100
 
-# Proxy Benchmark (Simulated German Small Cap Index tracking for relative comparison)
+# Proxy Benchmark (Simulated German Small Cap Index tracking)
 np.random.seed(42)
 benchmark_returns = (
     df["Daily_Return"].fillna(0) * 0.85
@@ -60,8 +90,6 @@ bench_ytd = ((bench_end / bench_start) - 1) * 100
 df["Benchmark_Return"] = df["Benchmark_Price"].pct_change()
 bench_volatility = df["Benchmark_Return"].std() * np.sqrt(252) * 100
 
-# --- SIDEBAR NAVIGATION ---
-st.sidebar.title("Navigation")
 section = st.sidebar.radio(
     "Select Module:",
     [
@@ -88,7 +116,6 @@ if section == "📊 Dashboard & Risk Metrics":
       " downside exposure for the year 2026."
   )
 
-  # Top Metric Row
   col1, col2, col3, col4 = st.columns(4)
   col1.metric("YTD Total Return", f"{ytd_return:.2f}%", delta=f"{ytd_return:.2f}%")
   col2.metric("Latest Price", f"{end_price:.2f} EUR")
@@ -101,7 +128,6 @@ if section == "📊 Dashboard & Risk Metrics":
 
   st.markdown("---")
 
-  # Secondary Stats Row
   sub1, sub2, sub3 = st.columns(3)
   sub1.metric(
       "Peak Price (High)", f"{max_price:.2f} EUR", f"Observed on {max_date}"
@@ -208,7 +234,7 @@ elif section == "📑 Fund Profile & Presentation Deck":
   st.title("📑 Fund Profile & Presentation Deck Data")
   st.markdown(
       "Extracted qualitative insights and structural information from the"
-      " presentation presentation files."
+      " presentation files."
   )
 
   tab1, tab2, tab3, tab4 = st.tabs(
@@ -231,15 +257,15 @@ elif section == "📑 Fund Profile & Presentation Deck":
   with tab2:
     st.subheader("Fund Management")
     st.write("""
-        - **Fund Manager:** Markus Turnwald (Deka Investment GmbH)
+        - **Fund Manager:** Markus Turnwald (Deka Investment GmbH)[cite: 1]
         - **Management Style:** Active high-conviction management designed to capture inefficiencies in the German mid-cap segment.
         """)
 
   with tab3:
     st.subheader("Identifiers & Formal Data")
     st.write("""
-        - **ISIN:** LU0923076540
-        - **Share Class:** CF
+        - **ISIN:** LU0923076540[cite: 1]
+        - **Share Class:** CF[cite: 1]
         - **Reporting Standards:** Monthly reporting, risk metrics, and independent rating reviews.
         """)
 
