@@ -1,30 +1,29 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from src.data_loader import load_and_preprocess_data
 from src.metrics_calculator import compute_all_metrics
 
 st.set_page_config(
-    page_title="Deka Fund Performance & Risk Dashboard",
+    page_title="Deka-Deutschland Nebenwerte CF Dashboard",
     page_icon="📈",
     layout="wide"
 )
 
-st.title("📈 Deka Fund Analytics Dashboard")
-st.markdown("Performance & Risk Analysis (30.12.2025 – 30.09.2026)")
+st.title("📈 Deka-Deutschland Nebenwerte CF (LU0923076540)")
+st.markdown("**Fund Performance & Risk Analysis Dashboard (30.12.2025 – 30.09.2026)**")
 
 # Sidebar Controls
 st.sidebar.header("Configuration")
 uploaded_file = st.sidebar.file_uploader("Upload Excel File (.xlsx)", type=["xlsx", "xls"])
 risk_free_rate = st.sidebar.number_input("Risk Free Rate (p.a.)", value=0.02, step=0.005, format="%.3f")
 
-# Data Source selection
+# Data Source selection: defaults to your specific file packaged in data/
 if uploaded_file is not None:
     file_source = uploaded_file
 else:
-    file_source = "data/deka_fund_prices.xlsx"
-    st.sidebar.info("Using default dataset from `data/deka_fund_prices.xlsx`.")
+    file_source = "data/Trainee-Aufgabe_2026.xlsx"
+    st.sidebar.info("Using default file: `data/Trainee-Aufgabe_2026.xlsx`.")
 
 try:
     # Load and process data
@@ -47,21 +46,19 @@ try:
 
     st.markdown("---")
 
-    # Charts Section
+    # Tabs Section
     tab1, tab2, tab3 = st.tabs(["Price History & Drawdowns", "Return Distribution", "Detailed Metrics Table"])
 
     with tab1:
-        # Price history chart
-        fig_price = px.line(df, x=date_col, y=price_col, title="Fund NAV / Price History")
+        fig_price = px.line(df, x=date_col, y=price_col,
+                            title="Fund NAV / Price History (Deka-Deutschland Nebenwerte CF)")
         st.plotly_chart(fig_price, use_container_width=True)
 
-        # Drawdown chart
         fig_dd = px.area(df, x=date_col, y=drawdowns, title="Under-water Drawdown Chart", labels={'y': 'Drawdown'})
         fig_dd.update_traces(fillcolor="rgba(255, 0, 0, 0.3)", line_color="red")
         st.plotly_chart(fig_dd, use_container_width=True)
 
     with tab2:
-        # Distribution plot
         fig_hist = px.histogram(df.dropna(), x='Daily_Return', nbins=40, title="Daily Return Distribution",
                                 marginal="box")
         st.plotly_chart(fig_hist, use_container_width=True)
@@ -72,4 +69,3 @@ try:
 
 except Exception as e:
     st.error(f"Error processing the file: {e}")
-    st.write("Please verify that your Excel file contains `Date` and `Price` columns.")

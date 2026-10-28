@@ -2,37 +2,31 @@ import pandas as pd
 import numpy as np
 
 
-def load_and_preprocess_data(file_source, date_col='Date', price_col='Price'):
+def load_and_preprocess_data(file_source):
     """
-    Loads Excel file and prepares clean returns time series.
-    Supports file paths or Streamlit UploadedFile objects.
+    Loads and parses the specific Trainee-Aufgabe_2026.xlsx structure
+    for Deka-Deutschland Nebenwerte CF.
     """
-    df = pd.read_excel(file_source)
+    # Read the raw excel without assuming headers
+    df_raw = pd.read_excel(file_source, header=None)
 
-    # Clean column names
-    df.columns = [str(c).strip() for c in df.columns]
+    # Based on file inspection, data starts at row index 3
+    # Row 2 contains column headers ['Datum', 'Fondspreise des...']
+    # Rows 3 onwards contain the actual time series data
+    data = df_raw.iloc[3:].copy()
+    data = data.iloc[:, :2]  # Keep first two columns
+    data.columns = ['Date', 'Price']
 
-    # Identify date column if alternative naming exists
-    if date_col not in df.columns:
-        date_candidates = [c for c in df.columns if 'date' in c.lower() or 'datum' in c.lower()]
-        if date_candidates:
-            date_col = date_candidates[0]
-        else:
-            raise KeyError(f"Date column '{date_col}' not found in Excel file.")
-
-    # Identify price column if alternative naming exists
-    if price_col not in df.columns:
-        price_candidates = [c for c in df.columns if 'price' in c.lower() or 'kurs' in c.lower() or 'nav' in c.lower()]
-        if price_candidates:
-            price_col = price_candidates[0]
-        else:
-            raise KeyError(f"Price column '{price_col}' not found in Excel file.")
+    # Drop any potential NaN rows
+    data = data.dropna(subset=['Date', 'Price']).reset_index(drop=True)
 
     # Convert types and sort chronologically
-    df[date_col] = pd.to_datetime(df[date_col], dayfirst=True)
-    df = df.sort_values(by=date_col).reset_index(drop=True)
+    data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
+    data['Price'] = pd.to_numeric(data['Price'], errors='coerce')
+
+    data = data.dropna().sort_values(by='Date').reset_index(drop=True)
 
     # Calculate daily returns
-    df['Daily_Return'] = df[price_col].pct_change()
+    data['Daily_Return'] = data['Price'].pct_change()
 
-    return df, date_col, price_col
+    return data, 'Date', 'Price'
