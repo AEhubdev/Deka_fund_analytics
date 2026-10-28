@@ -1,106 +1,187 @@
-import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
 import plotly.express as px
-from src.data_loader import load_and_preprocess_data
-from src.metrics_calculator import compute_all_metrics
+import streamlit as st
 
+# --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Deka-Deutschland Nebenwerte CF Dashboard",
+    page_title="Deka-Deutschland Nebenwerte CF - Dashboard",
     page_icon="📈",
-    layout="wide"
+    layout="wide",
 )
 
-st.title("📈 Deka-Deutschland Nebenwerte CF (LU0923076540)")
-st.markdown("**Fund Performance & Risk Analysis Dashboard** *(Data span: 30.12.2025 – 30.09.2026)*")
+# --- LOAD AND CACHE DATA ---
 
-# Sidebar Controls for Public Fund Benchmarks
-st.sidebar.header("Benchmark Settings")
-rf_option = st.sidebar.selectbox(
-    "Select Risk-Free Rate Benchmark (2026)",
-    options=[
-        "Custom Rate",
-        "3-Month Euribor Average (~2.35%)",
-        "German 10Y Bund Yield (~3.35%)",
-        "Zero Risk-Free Rate (0.00%)"
+
+@st.cache_data
+def load_data():
+  df_raw = pd.read_excel("Trainee-Aufgabe_2026.xlsx", sheet_name="Tabelle1")
+  # Extract data starting from row index 2
+  data = df_raw.iloc[2:].copy()
+  data.columns = ["Date", "Price"]
+  data["Date"] = pd.to_datetime(data["Date"])
+  data["Price"] = pd.to_numeric(data["Price"])
+  data = data.sort_values("Date").reset_index(drop=True)
+  return data
+
+
+df = load_data()
+
+# --- SIDEBAR NAVIGATION ---
+st.sidebar.title("Navigation & Filters")
+section = st.sidebar.radio(
+    "Go to:",
+    [
+        "📊 Dashboard & Metrics",
+        "📑 Fund Profile & Presentation Data",
+        "⚠️ Risk & Opportunities",
     ],
-    index=1
 )
 
-if rf_option == "Custom Rate":
-    risk_free_rate = st.sidebar.number_input("Enter Custom Risk-Free Rate (p.a.)", value=0.0235, step=0.0025,
-                                             format="%.4f")
-elif rf_option == "3-Month Euribor Average (~2.35%)":
-    risk_free_rate = 0.0235
-elif rf_option == "German 10Y Bund Yield (~3.35%)":
-    risk_free_rate = 0.0335
-else:
-    risk_free_rate = 0.0000
+st.sidebar.markdown("---")
+st.sidebar.info(
+    "**Fund:** Deka-Deutschland Nebenwerte CF\n**ISIN:** LU0923076540\n**Fondsmanagement:**"
+    " Markus Turnwald"
+)
 
-st.sidebar.info(f"Using annualized risk-free rate ($r_f$): **{risk_free_rate:.2%}**")
+# --- SECTION 1: DASHBOARD & METRICS ---
+if section == "📊 Dashboard & Metrics":
+  st.title("📊 Deka-Deutschland Nebenwerte CF: Performance 2026")
+  st.markdown(
+      "Interactive analysis of fund prices, advanced risk metrics, and"
+      " historical performance based on official trainee dataset."
+  )
 
-file_source = "data/Trainee-Aufgabe_2026.xlsx"
+  # Calculate Metrics
+  start_price = df.iloc[0]["Price"]
+  end_price = df.iloc[-1]["Price"]
+  ytd_return = ((end_price / start_price) - 1) * 100
 
-try:
-    # Load and process data
-    df, date_col, price_col = load_and_preprocess_data(file_source)
-    metrics, drawdowns = compute_all_metrics(df, price_col=price_col, risk_free_rate=risk_free_rate)
+  max_price = df["Price"].max()
+  min_price = df["Price"].min()
+  max_date = df.loc[df["Price"].idxmax(), "Date"].strftime("%Y-%m-%d")
+  min_date = df.loc[df["Price"].idxmin(), "Date"].strftime("%Y-%m-%d")
 
-    # KPI Row 1: Performance
-    st.subheader("📊 Core Performance Indicators")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Cumulative Return", f"{metrics['Cumulative Return']:.2%}")
-    col2.metric("Annualized Return (CAGR)", f"{metrics['Annualized Return (CAGR)']:.2%}")
-    col3.metric("Start Price", f"{metrics['Start NAV / Price']:.2f} EUR")
-    col4.metric("End Price", f"{metrics['End NAV / Price']:.2f} EUR")
+  df["Daily_Return"] = df["Price"].pct_change()
+  df["Cumulative_Max"] = df["Price"].cummax()
+  df["Drawdown"] = (df["Price"] - df["Cumulative_Max"]) / df["Cumulative_Max"]
+  max_drawdown = df["Drawdown"].min() * 100
+  annualized_volatility = df["Daily_Return"].std() * np.sqrt(252) * 100
 
-    # KPI Row 2: Risk-Adjusted Ratios & Risk
-    st.subheader("🛡️ Risk & Risk-Adjusted Measures")
-    col5, col6, col7, col8 = st.columns(4)
-    col5.metric("Sharpe Ratio", f"{metrics['Sharpe Ratio (rf=2%)']:.2f}",
-                help=f"Calculated with r_f = {risk_free_rate:.2%}")
-    col6.metric("Sortino Ratio", f"{metrics['Sortino Ratio']:.2f}")
-    col7.metric("Calmar Ratio", f"{metrics['Calmar Ratio']:.2f}")
-    col8.metric("Max Drawdown", f"{metrics['Maximum Drawdown']:.2%}")
+  # Display Metrics in Columns
+  col1, col2, col3, col4 = st.columns(4)
+  col1.metric("YTD Return", f"{ytd_return:.2f}%", delta=f"{ytd_return:.2f}%")
+  col2.metric("Latest Price", f"{end_price:.2f} EUR")
+  col3.metric("Max Drawdown", f"{max_drawdown:.2f}%", delta_color="inverse")
+  col4.metric(
+      "Ann. Volatility",
+      f"{annualized_volatility:.2f}%",
+      delta_color="off",
+  )
 
-    st.markdown("---")
+  st.markdown("---")
 
-    # Tabs Section for Detailed Exploration
-    tab1, tab2, tab3 = st.tabs(
-        ["Price & Drawdown Analysis", "Return Distribution & Tail Risk", "Complete Metrics Inventory"])
+  # Additional Stats
+  sub1, sub2, sub3 = st.columns(3)
+  sub1.metric(
+      "Highest Price (Peak)", f"{max_price:.2f} EUR", f"Reached on {max_date}"
+  )
+  sub2.metric(
+      "Lowest Price (Trough)", f"{min_price:.2f} EUR", f"Reached on {min_date}"
+  )
+  sub3.metric("Observation Period", f"{df['Date'].dt.date.nunique()} Days")
 
-    with tab1:
-        fig_price = px.line(df, x=date_col, y=price_col, title="Fund NAV / Price History (30.12.2025 – 30.09.2026)")
-        st.plotly_chart(fig_price, use_container_width=True)
+  st.markdown("### 📈 Fund Price Evolution Over Time")
 
-        fig_dd = px.area(df, x=date_col, y=drawdowns, title="Under-water Drawdown Chart",
-                         labels={'y': 'Drawdown Level'})
-        fig_dd.update_traces(fillcolor="rgba(238, 75, 43, 0.3)", line_color="#EE4B2B")
-        st.plotly_chart(fig_dd, use_container_width=True)
+  # Interactive Plotly Chart
+  fig = px.line(
+      df,
+      x="Date",
+      y="Price",
+      title="Deka-Deutschland Nebenwerte CF - Daily Fondspreise (2026)",
+      labels={"Price": "Price (EUR)", "Date": "Trading Date"},
+  )
+  fig.update_traces(line_color="#1f77b4", line_width=2)
+  fig.update_layout(
+      xaxis_title="Date",
+      yaxis_title="Price in EUR",
+      hovermode="x unified",
+      template="plotly_white",
+  )
+  st.plotly_chart(fig, use_container_width=True)
 
-    with tab2:
-        col_a, col_b = st.columns(2)
-        with col_a:
-            fig_hist = px.histogram(df.dropna(), x='Daily_Return', nbins=40, title="Daily Return Distribution",
-                                    marginal="box")
-            st.plotly_chart(fig_hist, use_container_width=True)
-        with col_b:
-            st.markdown("### Tail Risk & Distribution Insights")
-            st.markdown(
-                f"* **Daily Volatility:** `{metrics['Annualized Volatility'] / np.sqrt(252):.2%}` (Annualized: `{metrics['Annualized Volatility']:.2%}`)")
-            st.markdown(f"* **Historical VaR (95% Daily):** `{metrics['Historical VaR (95% Daily)']:.2%}`")
-            st.markdown(
-                f"* **Expected Shortfall / CVaR (95%):** `{metrics['Historical Expected Shortfall / CVaR (95%)']:.2%}`")
-            st.markdown(
-                f"* **Best Day:** `{metrics['Best Daily Return']:.2%}` | **Worst Day:** `{metrics['Worst Daily Return']:.2%}`")
-            st.markdown(f"* **Positive Trading Days:** `{metrics['Positive Days Ratio']:.1%}`")
-            st.markdown(
-                f"* **Skewness:** `{metrics['Return Skewness']:.2f}` | **Kurtosis:** `{metrics['Return Kurtosis']:.2f}`")
+  # Drawdown Chart
+  st.markdown("### 📉 Historical Drawdown Chart")
+  fig_dd = px.area(
+      df,
+      x="Date",
+      y=df["Drawdown"] * 100,
+      title="Underwater Chart (Drawdown %)",
+      labels={"y": "Drawdown (%)", "Date": "Date"},
+  )
+  fig_dd.update_traces(line_color="red", fillcolor="rgba(255,0,0,0.2)")
+  fig_dd.update_layout(
+      yaxis_title="Drawdown from Peak (%)", template="plotly_white"
+  )
+  st.plotly_chart(fig_dd, use_container_width=True)
 
-    with tab3:
-        st.subheader("All Computed Quantitative Metrics")
-        metrics_df = pd.DataFrame(list(metrics.items()), columns=["Indicator / Metric", "Value"])
-        st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+# --- SECTION 2: FUND PROFILE & PRESENTATION DATA ---
+elif section == "📑 Fund Profile & Presentation Data":
+  st.title("📑 Fund Profile & Presentation Insights")
+  st.markdown(
+      "Summary of structural details extracted from the official fund"
+      " presentation deck (`ZDF_Deka-Deutschland_Nebenwerte...`)."
+  )
 
-except Exception as e:
-    st.error(f"Error processing the file: {e}")
+  tab1, tab2, tab3 = st.tabs(
+      ["Fondsprofil", "Fund Management", "Rating & Structure"]
+  )
+
+  with tab1:
+    st.subheader("Investment Focus")
+    st.write("""
+        - **Asset Class:** Equity Fund focusing on German Small & Mid Caps (Nebenwerte).
+        - **Benchmark Universe:** MDAX, SDAX, TecDAX, and comparable listed German enterprises.
+        - **Investment Objective:** Long-term capital growth through active bottom-up stock selection of high-quality growth and niche market leaders (hidden champions).
+        """)
+
+  with tab2:
+    st.subheader("Management & Strategy")
+    st.write("""
+        - **Fund Manager:** Markus Turnwald (Deka Investment GmbH)
+        - **Active Management Approach:** High Active Share relative to standard benchmarks to exploit inefficiencies in the German mid-cap segment.
+        """)
+
+  with tab3:
+    st.subheader("Ratings & Classifications")
+    st.write("""
+        - **ISIN:** LU0923076540
+        - **Share Class:** CF (Retail / Institutional flexible class)
+        - Independent agency ratings and monthly reports are maintained in the official Deka reporting framework.
+        """)
+
+# --- SECTION 3: RISKS & OPPORTUNITIES ---
+elif section == "⚠️ Risk & Opportunities":
+  st.title("⚠️ Wesentliche Chancen und Risiken")
+  st.markdown(
+      "Key opportunities and risk factors associated with investing in German"
+      " mid-caps."
+  )
+
+  col_c, col_r = st.columns(2)
+
+  with col_c:
+    st.success("### 🚀 Chancen (Opportunities)")
+    st.markdown("""
+        - **High Growth Potential:** Small and mid-caps often outgrow large blue-chip corporations due to higher scalability and nimble business models.
+        - **Market Leaders (Hidden Champions):** Access to specialized global market leaders in niche technological and industrial sectors.
+        - **Innovation Driver:** Strong exposure to advanced engineering, software, and specialized tech solutions (TecDAX).
+        """)
+
+  with col_r:
+    st.error("### ⚠️ Risiken (Risks)")
+    st.markdown("""
+        - **Higher Volatility:** Nebenwerte experience steeper price fluctuations and higher beta compared to broad large-cap indices.
+        - **Cyclical Sensitivity:** Export-oriented German mid-caps are vulnerable to global macroeconomic slowdowns and supply chain disruptions.
+        - **Liquidity Constraints:** Lower average trading volumes in smaller equities can result in wider bid-ask spreads during market stress.
+        """)
