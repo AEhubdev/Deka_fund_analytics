@@ -12,31 +12,20 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- ROBUST DATA LOADING WITH UPLOADER FALLBACK ---
+# --- ROBUST DATA LOADING (pointing to data/ folder) ---
 
 
 @st.cache_data
-def load_excel_file(uploaded_file=None):
-  if uploaded_file is not None:
-    df_raw = pd.read_excel(uploaded_file, sheet_name=0)
-  else:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(script_dir, "Trainee-Ausgabe_2026.xlsx")
+def load_excel_file():
+  # Pointing to data/Trainee-Aufgabe_2026.xlsx as shown in your project tree
+  script_dir = os.path.dirname(os.path.abspath(__file__))
+  file_path = os.path.join(script_dir, "data", "Trainee-Aufgabe_2026.xlsx")
 
-    # Fallback search in current working directory if not found in script dir
-    if not os.path.exists(file_path):
-      if os.path.exists("Trainee-Ausgabe_2026.xlsx"):
-        file_path = "Trainee-Ausgabe_2026.xlsx"
-      else:
-        # Search for any xlsx file in directory
-        xlsx_files = [f for f in os.listdir(script_dir) if f.endswith(".xlsx")]
-        if xlsx_files:
-          file_path = os.path.join(script_dir, xlsx_files[0])
-        else:
-          return None
+  if not os.path.exists(file_path):
+    # Fallback if running from root directly
+    file_path = "Trainee-Aufgabe_2026.xlsx"
 
-    df_raw = pd.read_excel(file_path, sheet_name=0)
-
+  df_raw = pd.read_excel(file_path, sheet_name=0)
   data = df_raw.iloc[2:].copy()
   data.columns = ["Date", "Price"]
   data["Date"] = pd.to_datetime(data["Date"])
@@ -45,19 +34,12 @@ def load_excel_file(uploaded_file=None):
   return data
 
 
-# --- SIDEBAR CONFIGURATION & UPLOADER ---
-st.sidebar.title("Navigation & Data")
-uploaded_file = st.sidebar.file_uploader(
-    "Upload Trainee-Aufgabe_2026.xlsx (if missing)", type=["xlsx"]
-)
-
-df = load_excel_file(uploaded_file)
+df = load_excel_file()
 
 if df is None or df.empty:
   st.error(
-      "⚠️ **Excel file not found!** Please ensure `Trainee-Ausgabe_2026.xlsx` is"
-      " pushed to your GitHub repository in the same folder as `app.py`, or"
-      " upload it using the sidebar uploader above."
+      "⚠️ **Excel file not found in `data/` folder!** Please ensure"
+      " `Trainee-Aufgabe_2026.xlsx` is inside the `data/` directory."
   )
   st.stop()
 
@@ -90,6 +72,8 @@ bench_ytd = ((bench_end / bench_start) - 1) * 100
 df["Benchmark_Return"] = df["Benchmark_Price"].pct_change()
 bench_volatility = df["Benchmark_Return"].std() * np.sqrt(252) * 100
 
+# --- SIDEBAR NAVIGATION ---
+st.sidebar.title("Navigation")
 section = st.sidebar.radio(
     "Select Module:",
     [
@@ -234,7 +218,7 @@ elif section == "📑 Fund Profile & Presentation Deck":
   st.title("📑 Fund Profile & Presentation Deck Data")
   st.markdown(
       "Extracted qualitative insights and structural information from the"
-      " presentation files."
+      " presentation files (`ZDF_Deka-Deutschland_Nebenwerte...`)."
   )
 
   tab1, tab2, tab3, tab4 = st.tabs(
