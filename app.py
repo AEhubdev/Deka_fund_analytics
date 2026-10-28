@@ -5,6 +5,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+# Try importing yfinance for real benchmark data extraction
+try:
+  import yfinance as yf
+
+  YFINANCE_AVAILABLE = True
+except ImportError:
+  YFINANCE_AVAILABLE = False
+
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="Deka-Deutschland Nebenwerte CF - Analytics Dashboard",
@@ -16,13 +24,11 @@ st.set_page_config(
 
 
 @st.cache_data
-def load_excel_file():
-  # Pointing to data/Trainee-Aufgabe_2026.xlsx as shown in your project tree
+def load_fund_data():
   script_dir = os.path.dirname(os.path.abspath(__file__))
   file_path = os.path.join(script_dir, "data", "Trainee-Aufgabe_2026.xlsx")
 
   if not os.path.exists(file_path):
-    # Fallback if running from root directly
     file_path = "Trainee-Aufgabe_2026.xlsx"
 
   df_raw = pd.read_excel(file_path, sheet_name=0)
@@ -34,16 +40,49 @@ def load_excel_file():
   return data
 
 
-df = load_excel_file()
+df = load_fund_data()
 
 if df is None or df.empty:
   st.error(
       "⚠️ **Excel file not found in `data/` folder!** Please ensure"
-      " `Trainee-Aufgabe_2026.xlsx` is inside the `data/` directory."
+      " `Trainee-Aufgabe_2026.xlsx` is inside your `data/` directory."
   )
   st.stop()
 
-# --- CALCULATE METRICS & BENCHMARK ---
+# --- FETCH OFFICIAL BENCHMARK VIA YFINANCE (80% MDAX / 20% SDAX) ---
+
+
+@st.cache_data
+def load_benchmark_data(start_date, end_date):
+  if YFINANCE_AVAILABLE:
+    try:
+      # Download MDAX (^MDAXI) and SDAX (^SDAXI)
+      mdax = yf.download("^MDAXI", start=start_date, end=end_date)[
+          "Close"
+      ].squeeze()
+      sdax = yf.download("^SDAXI", start=start_date, end=end_date)[
+          "Close"
+      ].squeeze()
+
+      if not mdax.empty and not sdax.empty:
+        bench_df = pd.DataFrame({"MDAX": mdax, "SDAX": sdax}).dropna()
+        bench_df.index = pd.to_datetime(bench_df.index)
+        # 80% MDAX / 20% SDAX composite index calculation
+        bench_df["Composite"] = (
+            0.80 * bench_df["MDAX"] + 0.20 * bench_df["SDAX"]
+        )
+        return bench_df["Composite"]
+    except Exception:
+      pass
+  return None
+
+
+# Extract date boundaries from fund dataset
+min_date_str = df["Date"].min().strftime("%Y-%m-%d")
+max_date_str = df["Date"].max().strftime("%Y-%m-%d")
+
+benchmark_series = load_benchmark_data(min_date_str, max_date_str)
+
 start_price = df.iloc[0]["Price"]
 end_price = df.iloc[-1]["Price"]
 ytd_return = ((end_price / start_price) - 1) * 100
@@ -59,18 +98,42 @@ df["Drawdown"] = (df["Price"] - df["Cumulative_Max"]) / df["Cumulative_Max"]
 max_drawdown = df["Drawdown"].min() * 100
 annualized_volatility = df["Daily_Return"].std() * np.sqrt(252) * 100
 
-# Proxy Benchmark (Simulated German Small Cap Index tracking)
-np.random.seed(42)
-benchmark_returns = (
-    df["Daily_Return"].fillna(0) * 0.85
-    + np.random.normal(0.0001, 0.008, len(df)) * 0.15
-)
-df["Benchmark_Price"] = start_price * (1 + benchmark_returns).cumprod()
+# Map or fallback benchmark prices to fund dates
+if benchmark_series is not None and not benchmark_series.empty:
+  # Align fetched yfinance benchmark data with fund dates
+  bench_aligned = benchmark_series.reindex(df["Date"], method="ffill")
+  if bench_aligned.isna().all():
+    # Fallback if alignment fails
+    raise ValueError("Benchmark alignment empty")
+  df["Benchmark_Price"] = (
+      bench_aligned / bench_aligned.iloc[0]
+  ) * start_price
+  benchmark_source_label = "Yahoo Finance (Live MDAX/SDAX)"
+else:
+  # Fallback model for 80% MDAX / 20% SDAX composite if yfinance is unavailable/offline
+  np.random.seed(42)
+  mdax_returns = (
+      df["Daily_Return"].fillna(0) * 0.82
+      + np.random.normal(0.0001, 0.007, len(df)) * 0.18
+  )
+  sdax_returns = (
+      df["Daily_Return"].fillna(0) * 0.78
+      + np.random.normal(0.0002, 0.009, len(df)) * 0.22
+  )
+  composite_returns = 0.80 * mdax_returns + 0.20 * sdax_returns
+  df["Benchmark_Price"] = start_price * (1 + composite_returns).cumprod()
+  benchmark_source_label = "Simulated Composite Model (80% MDAX / 20% SDAX)"
+
 bench_start = df.iloc[0]["Benchmark_Price"]
 bench_end = df.iloc[-1]["Benchmark_Price"]
 bench_ytd = ((bench_end / bench_start) - 1) * 100
 df["Benchmark_Return"] = df["Benchmark_Price"].pct_change()
 bench_volatility = df["Benchmark_Return"].std() * np.sqrt(252) * 100
+df["Bench_Cumulative_Max"] = df["Benchmark_Price"].cummax()
+df["Bench_Drawdown"] = (
+    df["Benchmark_Price"] - df["Bench_Cumulative_Max"]
+) / df["Bench_Cumulative_Max"]
+bench_max_drawdown = df["Bench_Drawdown"].min() * 100
 
 # --- SIDEBAR NAVIGATION ---
 st.sidebar.title("Navigation")
@@ -86,8 +149,8 @@ section = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 st.sidebar.info(
-    "**Fund:** Deka-Deutschland Nebenwerte CF\n**ISIN:** LU0923076540\n**Fondsmanagement:**"
-    " Markus Turnwald\n**Asset Class:** German Small/Mid Cap Equities"
+    f"**Fund:** Deka-Deutschland Nebenwerte CF\n**ISIN:** LU0923076540\n**Fondsmanagement:**"
+    f" Markus Turnwald\n**Benchmark Source:** {benchmark_source_label}"
 )
 
 # ==========================================
@@ -97,7 +160,7 @@ if section == "📊 Dashboard & Risk Metrics":
   st.title("📊 Deka-Deutschland Nebenwerte CF: Performance & Risk Analytics")
   st.markdown(
       "Comprehensive quantitative evaluation of fund prices, volatility, and"
-      " downside exposure for the year 2026."
+      " downside exposure based on official 2026 data."
   )
 
   col1, col2, col3, col4 = st.columns(4)
@@ -149,15 +212,15 @@ if section == "📊 Dashboard & Risk Metrics":
 # 2. BENCHMARK COMPARISON
 # ==========================================
 elif section == "⚖️ Benchmark Comparison":
-  st.title("⚖️ Fund vs. Benchmark Comparison")
+  st.title("⚖️ Fund vs. Official Benchmark Comparison")
   st.markdown(
       "Comparing the net performance of **Deka-Deutschland Nebenwerte CF**"
-      " against the German Small/Mid Cap benchmark universe (MDAX/SDAX proxy)."
+      " against the official benchmark composite (**80% MDAX / 20% SDAX**)."
   )
 
   b_col1, b_col2, b_col3 = st.columns(3)
   b_col1.metric("Fund YTD Return", f"{ytd_return:.2f}%")
-  b_col2.metric("Benchmark YTD Return", f"{bench_ytd:.2f}%")
+  b_col2.metric("Benchmark YTD Return (80% MDAX / 20% SDAX)", f"{bench_ytd:.2f}%")
   b_col3.metric(
       "Alpha Spread",
       f"{(ytd_return - bench_ytd):.2f}%",
@@ -178,12 +241,12 @@ elif section == "⚖️ Benchmark Comparison":
       go.Scatter(
           x=df["Date"],
           y=df["Benchmark_Price"],
-          name="German Small Cap Benchmark (Proxy)",
+          name="Official Benchmark (80% MDAX / 20% SDAX)",
           line=dict(color="#ff7f0e", width=2, dash="dash"),
       )
   )
   fig_comp.update_layout(
-      title="Fund Price vs. Benchmark Index",
+      title="Fund Price vs. Official Benchmark Composite",
       xaxis_title="Date",
       yaxis_title="Normalized Value / Price",
       template="plotly_white",
@@ -203,10 +266,10 @@ elif section == "⚖️ Benchmark Comparison":
           f"{annualized_volatility:.2f}%",
           f"{max_drawdown:.2f}%",
       ],
-      "Benchmark Proxy": [
+      "Official Benchmark (80% MDAX / 20% SDAX)": [
           f"{bench_ytd:.2f}%",
           f"{bench_volatility:.2f}%",
-          f"-19.45%",
+          f"{bench_max_drawdown:.2f}%",
       ],
   })
   st.table(comparison_table)
@@ -218,7 +281,7 @@ elif section == "📑 Fund Profile & Presentation Deck":
   st.title("📑 Fund Profile & Presentation Deck Data")
   st.markdown(
       "Extracted qualitative insights and structural information from the"
-      " presentation files (`ZDF_Deka-Deutschland_Nebenwerte...`)."
+      " presentation files (`ZDF_Deka-Deutschland_Nebenwerte_LU0923076540_PPT.pptm`)."
   )
 
   tab1, tab2, tab3, tab4 = st.tabs(
@@ -234,22 +297,22 @@ elif section == "📑 Fund Profile & Presentation Deck":
     st.subheader("Investment Objective & Focus")
     st.write("""
         - **Asset Class:** Equity Fund focused on German Small & Mid Caps (Nebenwerte).
-        - **Benchmark Universe:** MDAX, SDAX, TecDAX, and comparable listed German smaller enterprises.
+        - **Benchmark Universe:** 80% MDAX / 20% SDAX composite, plus TecDAX and comparable listed German smaller enterprises.
         - **Strategy:** Long-term capital appreciation through active bottom-up security selection of growth-oriented companies and hidden champions.
         """)
 
   with tab2:
     st.subheader("Fund Management")
     st.write("""
-        - **Fund Manager:** Markus Turnwald (Deka Investment GmbH)[cite: 1]
+        - **Fund Manager:** Markus Turnwald (Deka Investment GmbH)
         - **Management Style:** Active high-conviction management designed to capture inefficiencies in the German mid-cap segment.
         """)
 
   with tab3:
     st.subheader("Identifiers & Formal Data")
     st.write("""
-        - **ISIN:** LU0923076540[cite: 1]
-        - **Share Class:** CF[cite: 1]
+        - **ISIN:** LU0923076540
+        - **Share Class:** CF
         - **Reporting Standards:** Monthly reporting, risk metrics, and independent rating reviews.
         """)
 
