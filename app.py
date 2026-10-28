@@ -14,9 +14,30 @@ st.set_page_config(
 st.title("📈 Deka-Deutschland Nebenwerte CF (LU0923076540)")
 st.markdown("**Fund Performance & Risk Analysis Dashboard** *(Data span: 30.12.2025 – 30.09.2026)*")
 
-# Sidebar Controls (Risk-free rate configuration only)
-st.sidebar.header("Model Settings")
-risk_free_rate = st.sidebar.number_input("Risk Free Rate (p.a.)", value=0.02, step=0.005, format="%.3f")
+# Sidebar Controls for Public Fund Benchmarks
+st.sidebar.header("Benchmark Settings")
+rf_option = st.sidebar.selectbox(
+    "Select Risk-Free Rate Benchmark (2026)",
+    options=[
+        "Custom Rate",
+        "3-Month Euribor Average (~2.35%)",
+        "German 10Y Bund Yield (~3.35%)",
+        "Zero Risk-Free Rate (0.00%)"
+    ],
+    index=1
+)
+
+if rf_option == "Custom Rate":
+    risk_free_rate = st.sidebar.number_input("Enter Custom Risk-Free Rate (p.a.)", value=0.0235, step=0.0025,
+                                             format="%.4f")
+elif rf_option == "3-Month Euribor Average (~2.35%)":
+    risk_free_rate = 0.0235
+elif rf_option == "German 10Y Bund Yield (~3.35%)":
+    risk_free_rate = 0.0335
+else:
+    risk_free_rate = 0.0000
+
+st.sidebar.info(f"Using annualized risk-free rate ($r_f$): **{risk_free_rate:.2%}**")
 
 file_source = "data/Trainee-Aufgabe_2026.xlsx"
 
@@ -36,7 +57,8 @@ try:
     # KPI Row 2: Risk-Adjusted Ratios & Risk
     st.subheader("🛡️ Risk & Risk-Adjusted Measures")
     col5, col6, col7, col8 = st.columns(4)
-    col5.metric("Sharpe Ratio", f"{metrics['Sharpe Ratio (rf=2%)']:.2f}")
+    col5.metric("Sharpe Ratio", f"{metrics['Sharpe Ratio (rf=2%)']:.2f}",
+                help=f"Calculated with r_f = {risk_free_rate:.2%}")
     col6.metric("Sortino Ratio", f"{metrics['Sortino Ratio']:.2f}")
     col7.metric("Calmar Ratio", f"{metrics['Calmar Ratio']:.2f}")
     col8.metric("Max Drawdown", f"{metrics['Maximum Drawdown']:.2%}")
