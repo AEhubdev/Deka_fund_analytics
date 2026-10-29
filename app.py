@@ -273,6 +273,11 @@ profile_tab, fund_tab, benchmark_tab, data_tab = st.tabs(["Fund profile", "Fund 
 with profile_tab:
     st.subheader("Fund profile and portfolio snapshot")
     st.caption(f"Transcribed from the supplied Deka presentation · composition and ratings as of {PROFILE_AS_OF}")
+    st.subheader("Fondsratings")
+    rating_left, rating_right = st.columns(2)
+    rating_left.metric("Morningstar", "★★★☆☆ · 3 von 5 Sternen")
+    rating_right.metric("Scope Funds Rating", "C")
+    st.caption(f"Rating snapshot from the supplied Deka presentation · {PROFILE_AS_OF}. Ratings are historical snapshots and can change.")
     p1, p2, p3, p4 = st.columns(4)
     p1.metric("Fund launch", "03.06.2013")
     p2.metric("Distribution", "Distributing")
@@ -387,6 +392,53 @@ with benchmark_tab:
         comparison.add_trace(go.Scatter(x=benchmark.index, y=benchmark["Benchmark_Wealth"], mode="lines", name="80% MDAX / 20% SDAX", line={"color": "#D69E2E", "width": 2}))
         comparison.update_layout(title="Fund and benchmark over identical Excel dates", xaxis_title="Date", yaxis_title="Value (first Excel date = 100)", template="plotly_white", hovermode="x unified")
         st.plotly_chart(comparison, use_container_width=True)
+        st.subheader("Wertentwicklung")
+        st.caption("Fondsrendite aus der Excel-Preisreihe und Benchmarkrendite aus dem 80/20-MDAX/SDAX-Index auf denselben Excel-Beobachtungstagen.")
+
+        fund_wealth_by_date = fund.set_index("Date")["Fund_Wealth"]
+        benchmark_wealth_by_date = benchmark["Benchmark_Wealth"]
+        period_rows = []
+
+        def add_return_period(label: str, baseline_date: pd.Timestamp, period_end: pd.Timestamp) -> None:
+            fund_period_return = (fund_wealth_by_date.loc[period_end] / fund_wealth_by_date.loc[baseline_date] - 1.0) * 100.0
+            benchmark_period_return = (benchmark_wealth_by_date.loc[period_end] / benchmark_wealth_by_date.loc[baseline_date] - 1.0) * 100.0
+            period_rows.append({
+                "Zeitraum": label,
+                "Fonds (Excel-Preisrendite)": f"{fund_period_return:+.2f}%".replace(".", ","),
+                "Benchmark (80/20)": f"{benchmark_period_return:+.2f}%".replace(".", ","),
+                "Differenz": f"{fund_period_return - benchmark_period_return:+.2f} pp".replace(".", ","),
+            })
+
+        year_observations = fund.loc[fund["Date"].dt.year.eq(2026), "Date"]
+        if not year_observations.empty:
+            ytd_start = fund_dates[0] if has_ytd_baseline else year_observations.iloc[0]
+            ytd_end = year_observations.iloc[-1]
+            add_return_period(f"YTD 2026 · {ytd_start:%d.%m.%Y}–{ytd_end:%d.%m.%Y}", ytd_start, ytd_end)
+
+            monthly_dates = fund.loc[fund["Date"].dt.year.eq(2026), ["Date"]].copy()
+            monthly_dates["Month"] = monthly_dates["Date"].dt.to_period("M")
+            for month in sorted(monthly_dates["Month"].unique(), reverse=True):
+                month_observations = monthly_dates.loc[monthly_dates["Month"].eq(month), "Date"]
+                end_of_month = month_observations.iloc[-1]
+                first_position = fund_dates.get_loc(month_observations.iloc[0])
+                if first_position == 0:
+                    continue
+                baseline = fund_dates[first_position - 1]
+                add_return_period(f"{month.strftime('%b %Y')} · {baseline:%d.%m.%Y}–{end_of_month:%d.%m.%Y}", baseline, end_of_month)
+
+        if period_rows:
+            returns_table = pd.DataFrame(period_rows)
+
+            def return_color(value: str) -> str:
+                if value.startswith("+"):
+                    return "color: #137A67; font-weight: 600"
+                if value.startswith("-"):
+                    return "color: #B42318; font-weight: 600"
+                return ""
+
+            styled_returns = returns_table.style.applymap(return_color, subset=["Fonds (Excel-Preisrendite)", "Benchmark (80/20)", "Differenz"])
+            st.dataframe(styled_returns, hide_index=True, use_container_width=True)
+        st.caption("Eine separate Brutto- und Nettowertentwicklung lässt sich aus der Excel-Datei nicht berechnen: Sie enthält nur eine Fonds-Preisreihe und keine separate Anlegerkostenreihe. Die Tabelle weist daher die beobachtete Preisrendite aus; sie ist keine BVI-Bruttowertentwicklung und enthält keine individuelle Anlegerkostenberechnung.")
 
         pct_metrics = ["Return", "Annualized volatility", "Annualized downside deviation", "Maximum drawdown", "Current drawdown"]
         fund_risk_values = [fund_stats["return_pct"], fund_stats["volatility_pct"], fund_stats["downside_deviation_pct"], fund_stats["sortino_ratio"], fund_stats["max_drawdown_pct"], fund_stats["current_drawdown_pct"]]
@@ -441,3 +493,4 @@ with data_tab:
 
 st.divider()
 st.caption("Fund data is read only from the supplied Excel workbook. Benchmark data is downloaded from Yahoo Finance and cached for one hour. Yahoo data availability and history may change.")
+
