@@ -436,7 +436,13 @@ with benchmark_tab:
                     return "color: #B42318; font-weight: 600"
                 return ""
 
-            styled_returns = returns_table.style.applymap(return_color, subset=["Fonds (Excel-Preisrendite)", "Benchmark (80/20)", "Differenz"])
+            style_subset = ["Fonds (Excel-Preisrendite)", "Benchmark (80/20)", "Differenz"]
+            styler = returns_table.style
+            style_map = getattr(styler, "map", None)
+            if style_map is not None:
+                styled_returns = style_map(return_color, subset=style_subset)
+            else:
+                styled_returns = styler.applymap(return_color, subset=style_subset)
             st.dataframe(styled_returns, hide_index=True, use_container_width=True)
         st.caption("Eine separate Brutto- und Nettowertentwicklung lässt sich aus der Excel-Datei nicht berechnen: Sie enthält nur eine Fonds-Preisreihe und keine separate Anlegerkostenreihe. Die Tabelle weist daher die beobachtete Preisrendite aus; sie ist keine BVI-Bruttowertentwicklung und enthält keine individuelle Anlegerkostenberechnung.")
 
@@ -493,4 +499,5 @@ with data_tab:
 
 st.divider()
 st.caption("Fund data is read only from the supplied Excel workbook. Benchmark data is downloaded from Yahoo Finance and cached for one hour. Yahoo data availability and history may change.")
+
 
