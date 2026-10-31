@@ -420,8 +420,8 @@ with profile_tab:
 
 with fund_tab:
     performance = go.Figure()
-    performance.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fund price", line={"color": "#C8102E", "width": 3}))
-    performance.update_layout(title="Growth of 100 from the first Excel price", xaxis_title="Date", yaxis_title="Value (first Excel price = 100)", template="plotly_white", hovermode="x unified")
+    performance.add_trace(go.Scatter(x=fund["Date"], y=fund["Price"], mode="lines", name="Fund price (EUR)", line={"color": "#C8102E", "width": 3}, hovertemplate="%{x|%d.%m.%Y}<br>Price: %{y:.2f} EUR<extra></extra>"))
+    performance.update_layout(title="Fund price development", xaxis_title="Date", yaxis_title="Fund price (EUR)", template="plotly_white", hovermode="x unified")
     st.plotly_chart(style_deka_chart(performance), use_container_width=True)
 
     drawdown = fund["Fund_Wealth"] / fund["Fund_Wealth"].cummax() - 1.0
