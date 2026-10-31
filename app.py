@@ -59,6 +59,59 @@ st.set_page_config(
 )
 
 
+st.markdown(
+    """
+    <style>
+    :root {
+        color-scheme: light;
+        --deka-red: #C8102E;
+        --deka-ink: #173A45;
+        --deka-muted: #52666D;
+        --deka-border: #DCE3E5;
+        --deka-soft: #F5F7F7;
+    }
+    html, body, [data-testid="stAppViewContainer"], .stApp,
+    [data-testid="stHeader"] {
+        background-color: #FFFFFF !important;
+        color: var(--deka-ink) !important;
+    }
+    [data-testid="stHeader"] { border-bottom: 1px solid var(--deka-border); }
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF !important;
+        border-right: 1px solid var(--deka-border);
+    }
+    h1, h2, h3, h4 { color: var(--deka-ink) !important; }
+    p, label, [data-testid="stCaptionContainer"] { color: var(--deka-muted); }
+    a { color: var(--deka-red) !important; }
+    [data-testid="stMetric"] {
+        background: var(--deka-soft);
+        border: 1px solid var(--deka-border);
+        border-top: 3px solid var(--deka-red);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+    }
+    [data-testid="stMetricValue"] { color: var(--deka-ink) !important; }
+    [data-testid="stTabs"] [data-baseweb="tab-list"] {
+        border-bottom: 1px solid var(--deka-border);
+        gap: 0.4rem;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"] { color: var(--deka-muted); }
+    [data-testid="stTabs"] [aria-selected="true"] {
+        color: var(--deka-red) !important;
+        border-bottom-color: var(--deka-red) !important;
+    }
+    button[kind="primary"] {
+        background-color: var(--deka-red) !important;
+        border-color: var(--deka-red) !important;
+    }
+    [data-testid="stDataFrame"] { border: 1px solid var(--deka-border); border-radius: 6px; }
+    hr { border-color: var(--deka-border) !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 class DataError(ValueError):
     """Readable error for unusable source data."""
 
@@ -287,12 +340,12 @@ with profile_tab:
     left, right = st.columns(2)
     with left:
         industry_frame = pd.DataFrame({"Industry": list(INDUSTRIES), "Share (%)": list(INDUSTRIES.values())}).sort_values("Share (%)")
-        industry_chart = go.Figure(go.Bar(x=industry_frame["Share (%)"], y=industry_frame["Industry"], orientation="h", marker_color="#117C83", text=industry_frame["Share (%)"].map(lambda x: f"{x:.1f}%"), textposition="outside"))
+        industry_chart = go.Figure(go.Bar(x=industry_frame["Share (%)"], y=industry_frame["Industry"], orientation="h", marker_color="#C8102E", text=industry_frame["Share (%)"].map(lambda x: f"{x:.1f}%"), textposition="outside"))
         industry_chart.update_layout(title=f"Largest industries · {PROFILE_AS_OF}", xaxis_title="Portfolio share (%)", yaxis_title="", template="plotly_white", margin={"l": 10, "r": 40, "t": 55, "b": 35})
         st.plotly_chart(industry_chart, use_container_width=True)
     with right:
         holding_frame = pd.DataFrame({"Security": list(TOP_HOLDINGS), "Share (%)": list(TOP_HOLDINGS.values())}).sort_values("Share (%)")
-        holdings_chart = go.Figure(go.Bar(x=holding_frame["Share (%)"], y=holding_frame["Security"], orientation="h", marker_color="#D69E2E", text=holding_frame["Share (%)"].map(lambda x: f"{x:.1f}%"), textposition="outside"))
+        holdings_chart = go.Figure(go.Bar(x=holding_frame["Share (%)"], y=holding_frame["Security"], orientation="h", marker_color="#527D89", text=holding_frame["Share (%)"].map(lambda x: f"{x:.1f}%"), textposition="outside"))
         holdings_chart.update_layout(title=f"Top ten holdings · {PROFILE_AS_OF}", xaxis_title="Portfolio share (%)", yaxis_title="", template="plotly_white", margin={"l": 10, "r": 40, "t": 55, "b": 35})
         st.plotly_chart(holdings_chart, use_container_width=True)
 
@@ -306,13 +359,13 @@ with profile_tab:
 
 with fund_tab:
     performance = go.Figure()
-    performance.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fund price", line={"color": "#117C83", "width": 3}))
+    performance.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fund price", line={"color": "#C8102E", "width": 3}))
     performance.update_layout(title="Growth of 100 from the first Excel price", xaxis_title="Date", yaxis_title="Value (first Excel price = 100)", template="plotly_white", hovermode="x unified")
     st.plotly_chart(performance, use_container_width=True)
 
     drawdown = fund["Fund_Wealth"] / fund["Fund_Wealth"].cummax() - 1.0
     dd_chart = go.Figure()
-    dd_chart.add_trace(go.Scatter(x=fund["Date"], y=drawdown * 100.0, mode="lines", fill="tozeroy", name="Drawdown", line={"color": "#C25554", "width": 2}))
+    dd_chart.add_trace(go.Scatter(x=fund["Date"], y=drawdown * 100.0, mode="lines", fill="tozeroy", name="Drawdown", line={"color": "#C8102E", "width": 2}))
     dd_chart.update_layout(title="Fund drawdown from prior peak", xaxis_title="Date", yaxis_title="Drawdown (%)", template="plotly_white", hovermode="x unified")
     st.plotly_chart(dd_chart, use_container_width=True)
 
@@ -343,7 +396,7 @@ with fund_tab:
     monthly = monthly_source.groupby(monthly_source["Date"].dt.to_period("M"))["Fund_Return"].apply(lambda values: (1.0 + values).prod() - 1.0)
     monthly.index = monthly.index.to_timestamp(how="end").normalize()
     monthly_chart = go.Figure()
-    monthly_chart.add_trace(go.Bar(x=monthly.index, y=monthly.values * 100.0, marker_color=["#18866B" if value >= 0 else "#C25554" for value in monthly.values], name="Monthly price return"))
+    monthly_chart.add_trace(go.Bar(x=monthly.index, y=monthly.values * 100.0, marker_color=["#18866B" if value >= 0 else "#C8102E" for value in monthly.values], name="Monthly price return"))
     monthly_chart.update_layout(title="Monthly compounded fund price returns", xaxis_title="Month", yaxis_title="Return (%)", template="plotly_white")
     st.plotly_chart(monthly_chart, use_container_width=True)
     monthly_positive = int((monthly > 0).sum())
@@ -388,8 +441,8 @@ with benchmark_tab:
         b4.metric("Benchmark volatility", f"{benchmark_stats['volatility_pct']:.2f}%" if np.isfinite(benchmark_stats["volatility_pct"]) else "n/a")
 
         comparison = go.Figure()
-        comparison.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fund price return", line={"color": "#117C83", "width": 3}))
-        comparison.add_trace(go.Scatter(x=benchmark.index, y=benchmark["Benchmark_Wealth"], mode="lines", name="80% MDAX / 20% SDAX", line={"color": "#D69E2E", "width": 2}))
+        comparison.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fund price return", line={"color": "#C8102E", "width": 3}))
+        comparison.add_trace(go.Scatter(x=benchmark.index, y=benchmark["Benchmark_Wealth"], mode="lines", name="80% MDAX / 20% SDAX", line={"color": "#527D89", "width": 2}))
         comparison.update_layout(title="Fund and benchmark over identical Excel dates", xaxis_title="Date", yaxis_title="Value (first Excel date = 100)", template="plotly_white", hovermode="x unified")
         st.plotly_chart(comparison, use_container_width=True)
         st.subheader("Wertentwicklung")
@@ -433,7 +486,7 @@ with benchmark_tab:
                 if value.startswith("+"):
                     return "color: #137A67; font-weight: 600"
                 if value.startswith("-"):
-                    return "color: #B42318; font-weight: 600"
+                    return "color: #C8102E; font-weight: 600"
                 return ""
 
             style_subset = ["Fonds (Excel-Preisrendite)", "Benchmark (80/20)", "Differenz"]
@@ -499,5 +552,4 @@ with data_tab:
 
 st.divider()
 st.caption("Fund data is read only from the supplied Excel workbook. Benchmark data is downloaded from Yahoo Finance and cached for one hour. Yahoo data availability and history may change.")
-
 
