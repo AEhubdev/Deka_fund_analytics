@@ -308,6 +308,39 @@ def style_deka_chart(figure: go.Figure) -> go.Figure:
     return figure
 
 
+def style_deka_table(frame: pd.DataFrame):
+    """Force table cells and headers onto the same light Deka palette."""
+    styler = frame.style.set_properties(
+        **{
+            "background-color": "#FFFFFF",
+            "color": "#173A45",
+            "border-color": "#DCE3E5",
+        }
+    )
+    return styler.set_table_styles(
+        [
+            {
+                "selector": "th",
+                "props": [
+                    ("background-color", "#EAF0F1"),
+                    ("color", "#173A45"),
+                    ("font-weight", "bold"),
+                    ("border-color", "#DCE3E5"),
+                ],
+            },
+            {
+                "selector": "td",
+                "props": [
+                    ("background-color", "#FFFFFF"),
+                    ("color", "#173A45"),
+                    ("border-color", "#DCE3E5"),
+                ],
+            },
+        ],
+        overwrite=False,
+    )
+
+
 st.title(f"📈 {FUND_NAME}")
 st.caption(f"ISIN {ISIN} · Fund prices from the supplied Excel file · Reference index: 80% MDAX / 20% SDAX")
 
@@ -518,7 +551,7 @@ with benchmark_tab:
                 return ""
 
             style_subset = ["Fonds (Excel-Preisrendite)", "Benchmark (80/20)", "Differenz"]
-            styler = returns_table.style
+            styler = style_deka_table(returns_table)
             style_map = getattr(styler, "map", None)
             if style_map is not None:
                 styled_returns = style_map(return_color, subset=style_subset)
@@ -533,7 +566,7 @@ with benchmark_tab:
         risk_labels = ["Return", "Annualized volatility", "Annualized downside deviation", "Sortino ratio (0% target)", "Maximum drawdown", "Current drawdown"]
         format_risk = lambda values: ["n/a" if not np.isfinite(value) else (f"{value:+.2f}%" if label in pct_metrics else f"{value:.2f}") for label, value in zip(risk_labels, values)]
         risk_table = pd.DataFrame({"Metric": risk_labels, "Fund (Excel price series)": format_risk(fund_risk_values), "80/20 Yahoo composite": format_risk(benchmark_risk_values)})
-        st.dataframe(risk_table, hide_index=True, use_container_width=True)
+        st.dataframe(style_deka_table(risk_table), hide_index=True, use_container_width=True)
 
         paired_returns = pd.concat(
             [fund_dates_indexed["Fund_Return"].rename("Fund"), benchmark["Benchmark_Return"].rename("Benchmark")], axis=1
@@ -576,7 +609,7 @@ with data_tab:
     )
     export = fund[["Date", "Price", "Fund_Return", "Fund_Wealth"]].copy()
     st.download_button("Download Excel-date fund calculation table", export.to_csv(index=False).encode("utf-8-sig"), file_name="deka_fund_calculations.csv", mime="text/csv")
-    st.dataframe(export.tail(20), hide_index=True, use_container_width=True)
+    st.dataframe(style_deka_table(export.tail(20)), hide_index=True, use_container_width=True)
 
 st.divider()
 st.caption("Fund data is read only from the supplied Excel workbook. Benchmark data is downloaded from Yahoo Finance and cached for one hour. Yahoo data availability and history may change.")
