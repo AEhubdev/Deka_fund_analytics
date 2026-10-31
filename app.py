@@ -278,6 +278,34 @@ def pct(value: float) -> str:
     if not np.isfinite(value):
         return "n/a"
     return f"{value:+.2f}%".replace(".", ",")
+def style_deka_chart(figure: go.Figure) -> go.Figure:
+    """Apply the light Deka palette to Plotly's canvas and chart furniture."""
+    figure.update_layout(
+        template="plotly_white",
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        font={"family": "Arial, sans-serif", "color": "#173A45"},
+        title={"font": {"color": "#173A45"}},
+        legend={"font": {"color": "#173A45"}, "bgcolor": "rgba(255,255,255,0)"},
+        hoverlabel={"bgcolor": "#FFFFFF", "font": {"color": "#173A45"}, "bordercolor": "#DCE3E5"},
+        xaxis={
+            "tickfont": {"color": "#52666D"},
+            "title": {"font": {"color": "#173A45"}},
+            "gridcolor": "#E6EBED",
+            "linecolor": "#BCC8CC",
+            "zerolinecolor": "#BCC8CC",
+            "showline": True,
+        },
+        yaxis={
+            "tickfont": {"color": "#52666D"},
+            "title": {"font": {"color": "#173A45"}},
+            "gridcolor": "#E6EBED",
+            "linecolor": "#BCC8CC",
+            "zerolinecolor": "#BCC8CC",
+            "showline": True,
+        },
+    )
+    return figure
 
 
 st.title(f"📈 {FUND_NAME}")
@@ -342,12 +370,12 @@ with profile_tab:
         industry_frame = pd.DataFrame({"Industry": list(INDUSTRIES), "Share (%)": list(INDUSTRIES.values())}).sort_values("Share (%)")
         industry_chart = go.Figure(go.Bar(x=industry_frame["Share (%)"], y=industry_frame["Industry"], orientation="h", marker_color="#C8102E", text=industry_frame["Share (%)"].map(lambda x: f"{x:.1f}%"), textposition="outside"))
         industry_chart.update_layout(title=f"Largest industries · {PROFILE_AS_OF}", xaxis_title="Portfolio share (%)", yaxis_title="", template="plotly_white", margin={"l": 10, "r": 40, "t": 55, "b": 35})
-        st.plotly_chart(industry_chart, use_container_width=True)
+        st.plotly_chart(style_deka_chart(industry_chart), use_container_width=True)
     with right:
         holding_frame = pd.DataFrame({"Security": list(TOP_HOLDINGS), "Share (%)": list(TOP_HOLDINGS.values())}).sort_values("Share (%)")
         holdings_chart = go.Figure(go.Bar(x=holding_frame["Share (%)"], y=holding_frame["Security"], orientation="h", marker_color="#527D89", text=holding_frame["Share (%)"].map(lambda x: f"{x:.1f}%"), textposition="outside"))
         holdings_chart.update_layout(title=f"Top ten holdings · {PROFILE_AS_OF}", xaxis_title="Portfolio share (%)", yaxis_title="", template="plotly_white", margin={"l": 10, "r": 40, "t": 55, "b": 35})
-        st.plotly_chart(holdings_chart, use_container_width=True)
+        st.plotly_chart(style_deka_chart(holdings_chart), use_container_width=True)
 
     top_sector_total = sum(INDUSTRIES.values())
     top_holding_total = sum(TOP_HOLDINGS.values())
@@ -361,13 +389,13 @@ with fund_tab:
     performance = go.Figure()
     performance.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fund price", line={"color": "#C8102E", "width": 3}))
     performance.update_layout(title="Growth of 100 from the first Excel price", xaxis_title="Date", yaxis_title="Value (first Excel price = 100)", template="plotly_white", hovermode="x unified")
-    st.plotly_chart(performance, use_container_width=True)
+    st.plotly_chart(style_deka_chart(performance), use_container_width=True)
 
     drawdown = fund["Fund_Wealth"] / fund["Fund_Wealth"].cummax() - 1.0
     dd_chart = go.Figure()
     dd_chart.add_trace(go.Scatter(x=fund["Date"], y=drawdown * 100.0, mode="lines", fill="tozeroy", name="Drawdown", line={"color": "#C8102E", "width": 2}))
     dd_chart.update_layout(title="Fund drawdown from prior peak", xaxis_title="Date", yaxis_title="Drawdown (%)", template="plotly_white", hovermode="x unified")
-    st.plotly_chart(dd_chart, use_container_width=True)
+    st.plotly_chart(style_deka_chart(dd_chart), use_container_width=True)
 
     r1, r2, r3 = st.columns(3)
     r1.metric("Current drawdown from peak", pct(fund_stats["current_drawdown_pct"]))
@@ -398,7 +426,7 @@ with fund_tab:
     monthly_chart = go.Figure()
     monthly_chart.add_trace(go.Bar(x=monthly.index, y=monthly.values * 100.0, marker_color=["#18866B" if value >= 0 else "#C8102E" for value in monthly.values], name="Monthly price return"))
     monthly_chart.update_layout(title="Monthly compounded fund price returns", xaxis_title="Month", yaxis_title="Return (%)", template="plotly_white")
-    st.plotly_chart(monthly_chart, use_container_width=True)
+    st.plotly_chart(style_deka_chart(monthly_chart), use_container_width=True)
     monthly_positive = int((monthly > 0).sum())
     st.caption(f"Positive months: {monthly_positive} of {len(monthly)}. The first monthly figure starts at the last available 2025 price, and the last month ends at the latest Excel observation.")
 
@@ -444,7 +472,7 @@ with benchmark_tab:
         comparison.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fund price return", line={"color": "#C8102E", "width": 3}))
         comparison.add_trace(go.Scatter(x=benchmark.index, y=benchmark["Benchmark_Wealth"], mode="lines", name="80% MDAX / 20% SDAX", line={"color": "#527D89", "width": 2}))
         comparison.update_layout(title="Fund and benchmark over identical Excel dates", xaxis_title="Date", yaxis_title="Value (first Excel date = 100)", template="plotly_white", hovermode="x unified")
-        st.plotly_chart(comparison, use_container_width=True)
+        st.plotly_chart(style_deka_chart(comparison), use_container_width=True)
         st.subheader("Wertentwicklung")
         st.caption("Fondsrendite aus der Excel-Preisreihe und Benchmarkrendite aus dem 80/20-MDAX/SDAX-Index auf denselben Excel-Beobachtungstagen.")
 
