@@ -1,10 +1,10 @@
 """Deka-Deutschland Nebenwerte CF performance dashboard.
 
-Fund prices: data/Trainee-Aufgabe_2026.xlsx
-Reference index: 80% MDAX + 20% SDAX, using Yahoo Finance ^MDAXI and ^SDAXI.
-The composite return is calculated from the two daily index returns and rebalanced
-back to 80/20 each trading day. The Excel file has prices only, so the fund result
-is a price return and excludes cash distributions.
+Fondspreise: data/Trainee-Aufgabe_2026.xlsx
+Referenzindex: 80 % MDAX + 20 % SDAX, anhand der Yahoo-Finance-Symbole ^MDAXI und ^SDAXI.
+Die Gesamtentwicklung wird aus den täglichen Indexrenditen berechnet und täglich
+auf 80/20 zurückgesetzt. Die Excel-Datei enthält nur Preise; die Fondsrendite
+ist daher eine Kursrendite und berücksichtigt keine Ausschüttungen.
 """
 
 from __future__ import annotations
@@ -113,17 +113,17 @@ st.markdown(
 
 
 class DataError(ValueError):
-    """Readable error for unusable source data."""
+    """Verständlicher Fehler bei ungültigen Quelldaten."""
 
 
 def load_fund_prices(path: Path = FUND_FILE) -> pd.DataFrame:
-    """Read the supplied workbook's Date/Price series, which has a prompt above it."""
+    """Liest die Datum-/Preisreihe aus der bereitgestellten Arbeitsmappe."""
     if not path.exists():
-        raise DataError(f"Excel file not found: {path}")
+        raise DataError(f"Excel-Datei nicht gefunden: {path}")
     try:
         raw = pd.read_excel(path, sheet_name=0, header=None)
     except Exception as exc:
-        raise DataError(f"Could not read the Excel file: {exc}") from exc
+        raise DataError(f"Die Excel-Datei konnte nicht gelesen werden: {exc}") from exc
 
     header_row = None
     for row_number, row in raw.iterrows():
@@ -132,7 +132,7 @@ def load_fund_prices(path: Path = FUND_FILE) -> pd.DataFrame:
             header_row = row_number
             break
     if header_row is None:
-        raise DataError("Could not locate the Date/Datum header in the Excel workbook.")
+        raise DataError("Die Spaltenüberschrift Datum/Date wurde in der Excel-Datei nicht gefunden.")
 
     prices = raw.iloc[header_row + 1 :, :2].copy()
     prices.columns = ["Date", "Price"]
@@ -143,19 +143,19 @@ def load_fund_prices(path: Path = FUND_FILE) -> pd.DataFrame:
     prices = prices.sort_values("Date").drop_duplicates("Date", keep="last").reset_index(drop=True)
 
     if len(prices) < 2:
-        raise DataError("The Excel file must contain at least two valid fund prices.")
+        raise DataError("Die Excel-Datei muss mindestens zwei gültige Fondspreise enthalten.")
     if (prices["Price"] <= 0).any():
-        raise DataError("Fund prices must be positive.")
+        raise DataError("Fondspreise müssen größer als null sein.")
     return prices
 
 
 @st.cache_data(ttl=60 * 60, show_spinner=False)
 def download_yahoo_indices(start_date: str, end_date_exclusive: str) -> pd.DataFrame:
-    """Download daily Yahoo closes for the Excel period (end date is exclusive)."""
+    """Lädt tägliche Yahoo-Schlusskurse für den Zeitraum der Excel-Daten herunter (Enddatum exklusiv)."""
     try:
         import yfinance as yf
     except ImportError as exc:
-        raise RuntimeError("yfinance is missing. Add it to requirements.txt and install the dependencies.") from exc
+        raise RuntimeError("Das Paket yfinance fehlt. Bitte in requirements.txt ergänzen und installieren.") from exc
 
     try:
         data = yf.download(
@@ -171,9 +171,9 @@ def download_yahoo_indices(start_date: str, end_date_exclusive: str) -> pd.DataF
             timeout=25,
         )
     except Exception as exc:
-        raise RuntimeError(f"Yahoo Finance download failed: {exc}") from exc
+        raise RuntimeError(f"Der Yahoo-Finance-Abruf ist fehlgeschlagen: {exc}") from exc
     if data is None or data.empty:
-        raise RuntimeError("Yahoo Finance returned no index data for the Excel date range.")
+        raise RuntimeError("Yahoo Finance hat für den Zeitraum der Excel-Daten keine Indexdaten geliefert.")
 
     def close_series(ticker: str, output_name: str) -> pd.Series:
         matches = []
@@ -183,7 +183,7 @@ def download_yahoo_indices(start_date: str, end_date_exclusive: str) -> pd.DataF
             if ticker.casefold() in normalised and "close" in normalised:
                 matches.append(column)
         if len(matches) != 1:
-            raise RuntimeError(f"Could not find one daily Close series for {ticker} in Yahoo's response.")
+            raise RuntimeError(f"In der Yahoo-Antwort wurde keine eindeutige tägliche Schlusskursreihe für {ticker} gefunden.")
         series = pd.to_numeric(data[matches[0]], errors="coerce")
         series.index = pd.to_datetime(series.index, utc=True).tz_convert(None).normalize()
         series = series[~series.index.duplicated(keep="last")].sort_index()
@@ -194,27 +194,27 @@ def download_yahoo_indices(start_date: str, end_date_exclusive: str) -> pd.DataF
         [close_series(MDAX_TICKER, "MDAX"), close_series(SDAX_TICKER, "SDAX")], axis=1
     ).sort_index()
     if indices.empty or (indices <= 0).any().any():
-        raise RuntimeError("Yahoo Finance index closes are empty or invalid.")
+        raise RuntimeError("Die Yahoo-Finance-Schlusskurse sind leer oder ungültig.")
     return indices
 
 
 def make_benchmark(indices: pd.DataFrame, fund_dates: pd.DatetimeIndex) -> pd.DataFrame:
-    """Build daily-rebalanced 80/20 wealth, then sample at the Excel dates."""
+    """Berechnet die täglich auf 80/20 zurückgesetzte Referenzindex und übernimmt Werte zu den Excel-Stichtagen."""
     daily = indices.loc[(indices.index >= fund_dates[0]) & (indices.index <= fund_dates[-1])].copy()
     missing = daily[daily.isna().any(axis=1)].index
     if len(missing):
         examples = ", ".join(date.strftime("%Y-%m-%d") for date in missing[:5])
         raise RuntimeError(
-            f"Yahoo has incomplete MDAX or SDAX closes on {len(missing)} market date(s), including {examples}. "
-            "The benchmark is not forward-filled."
+            f"Für {len(missing)} Handelstag(e) fehlen MDAX- oder SDAX-Schlusskurse bei Yahoo, darunter {examples}. "
+            "Fehlende Referenzindexwerte werden nicht fortgeschrieben."
         )
 
     missing_excel_dates = fund_dates.difference(daily.index)
     if len(missing_excel_dates):
         examples = ", ".join(date.strftime("%Y-%m-%d") for date in missing_excel_dates[:5])
-        raise RuntimeError(f"Yahoo has no index close on {len(missing_excel_dates)} Excel date(s), including {examples}.")
+        raise RuntimeError(f"Für {len(missing_excel_dates)} Excel-Beobachtungstag(e) liegen keine Indexschlusskurse von Yahoo vor, darunter {examples}.")
     if len(daily) < 2 or daily.index[0] != fund_dates[0]:
-        raise RuntimeError("Yahoo data does not include the first Excel date as the benchmark baseline.")
+        raise RuntimeError("Die Yahoo-Daten enthalten nicht den ersten Excel-Beobachtungstag als Referenzindexbasis.")
 
     index_returns = daily.pct_change(fill_method=None)
     composite_returns = MDAX_WEIGHT * index_returns["MDAX"] + SDAX_WEIGHT * index_returns["SDAX"]
@@ -263,10 +263,10 @@ def calculate_metrics(returns: pd.Series, wealth: pd.Series) -> dict[str, object
 
 
 def ytd_window(prices: pd.DataFrame, year: int = 2026) -> tuple[pd.DataFrame, bool]:
-    """Return the year plus its last prior observation as a return baseline."""
+    """Gibt das Jahr einschließlich des letzten vorherigen Beobachtungstags als Renditebasis zurück."""
     in_year = prices.index[prices["Date"].dt.year.eq(year)]
     if len(in_year) == 0:
-        raise DataError(f"The Excel workbook has no fund prices for {year}.")
+        raise DataError(f"Die Excel-Datei enthält keine Fondspreise für {year}.")
     first_year_idx = int(in_year[0])
     last_year_idx = int(in_year[-1])
     has_prior_base = first_year_idx > 0
@@ -274,9 +274,19 @@ def ytd_window(prices: pd.DataFrame, year: int = 2026) -> tuple[pd.DataFrame, bo
     return prices.loc[start_idx:last_year_idx].copy().reset_index(drop=True), has_prior_base
 
 
+GERMAN_MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
+
+def de_date(value) -> str:
+    return pd.Timestamp(value).strftime("%d.%m.%Y")
+
+
+def de_num(value: float, digits: int = 2) -> str:
+    return f"{value:.{digits}f}".replace(".", ",")
+
+
 def pct(value: float) -> str:
     if not np.isfinite(value):
-        return "n/a"
+        return "k. A."
     return f"{value:+.2f}%".replace(".", ",")
 def style_deka_chart(figure: go.Figure) -> go.Figure:
     """Apply the light Deka palette to Plotly's canvas and chart furniture."""
@@ -342,7 +352,7 @@ def style_deka_table(frame: pd.DataFrame):
 
 
 st.title(f"📈 {FUND_NAME}")
-st.caption(f"ISIN {ISIN} · Fund prices from the supplied Excel file · Reference index: 80% MDAX / 20% SDAX")
+st.caption(f"ISIN {ISIN} · Fondspreise aus der bereitgestellten Excel-Datei · Referenzindex: 80 % MDAX / 20 % SDAX")
 
 try:
     source_fund = load_fund_prices()
@@ -360,117 +370,122 @@ fund_dates_indexed = fund.set_index("Date")
 fund_stats = calculate_metrics(fund_dates_indexed["Fund_Return"], fund_dates_indexed["Fund_Wealth"])
 
 st.info(
-    f"2026 assessment through latest Excel observation: **{end_date:%d %b %Y}** · "
-    f"{len(fund)} observations including the year-start baseline · {fund_stats['return_intervals']} return intervals. "
-    + ("The YTD return starts from the last available 2025 price." if has_ytd_baseline else "No pre-2026 price is present, so the exact year-to-date return from the prior year-end cannot be calculated.")
-    + " The Excel file contains fund prices only, so fund performance below is a price return and excludes cash distributions."
+    f"Bewertungszeitraum bis zur letzten Excel-Beobachtung: **{de_date(end_date)}** · "
+    f"{len(fund)} Beobachtungen einschließlich Jahresanfangs-Basis · {fund_stats['return_intervals']} Renditeintervalle. "
+    + ("Die Rendite seit Jahresbeginn beginnt mit dem letzten verfügbaren Fondspreis aus 2025." if has_ytd_baseline else "Es liegt kein Fondspreis aus 2025 vor. Daher kann die genaue Rendite seit dem Jahresende 2025 nicht berechnet werden.")
+    + " Die Excel-Datei enthält nur Fondspreise. Die Fondsentwicklung ist daher eine Kursrendite ohne Ausschüttungen."
 )
 
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("2026 YTD price return", pct(fund_stats["return_pct"]), help="Measured from the last available 2025 fund price to the latest Excel price in 2026.")
-c2.metric("Latest fund price", f"{fund['Price'].iloc[-1]:.2f} EUR")
-c3.metric("Maximum drawdown in 2026", pct(fund_stats["max_drawdown_pct"]))
-c4.metric("Annualized volatility", f"{fund_stats['volatility_pct']:.2f}%" if np.isfinite(fund_stats["volatility_pct"]) else "n/a")
+c1.metric("Kursrendite seit Jahresbeginn 2026", pct(fund_stats["return_pct"]), help="Berechnet vom letzten verfügbaren Fondspreis 2025 bis zum letzten Excel-Preis 2026.")
+c2.metric("Letzter Fondspreis", f"{fund['Price'].iloc[-1]:.2f} EUR".replace(".", ","))
+c3.metric("Maximaler Verlust 2026", pct(fund_stats["max_drawdown_pct"]))
+c4.metric("Volatilität p. a.", f"{fund_stats['volatility_pct']:.2f}%".replace(".", ",") if np.isfinite(fund_stats["volatility_pct"]) else "k. A.")
 
-direction = "positive" if fund_stats["return_pct"] > 0 else "negative" if fund_stats["return_pct"] < 0 else "flat"
-sortino_summary = f"{fund_stats['sortino_ratio']:.2f}" if np.isfinite(fund_stats["sortino_ratio"]) else "n/a"
+direction = "positiv" if fund_stats["return_pct"] > 0 else "negativ" if fund_stats["return_pct"] < 0 else "unverändert"
+sortino_summary = f"{fund_stats['sortino_ratio']:.2f}".replace(".", ",") if np.isfinite(fund_stats["sortino_ratio"]) else "k. A."
 st.write(
-    f"Assessment through {end_date:%d %B %Y}: the fund's 2026 price return is {pct(fund_stats['return_pct'])} ({direction}), "
-    f"with annualized volatility of {fund_stats['volatility_pct']:.1f}% and a maximum drawdown of {pct(fund_stats['max_drawdown_pct'])} "
-    f"from {fund_stats['peak_date']:%d %b} to {fund_stats['trough_date']:%d %b}. "
-    f"Its Sortino ratio is {sortino_summary} using a 0% target; the return and risk path should be considered together. "
-    "The benchmark tab adds the same-date 80/20 MDAX/SDAX comparison, subject to the return-basis caveat."
+    f"Bis zum {de_date(end_date)} beträgt die Kursrendite des Fonds im Jahr 2026 {pct(fund_stats['return_pct'])} ({direction}). "
+    f"Die Volatilität p. a. beträgt {de_num(fund_stats['volatility_pct'], 1)} %, der maximale Verlust (Drawdown) {pct(fund_stats['max_drawdown_pct'])} "
+    f"vom {de_date(fund_stats['peak_date'])} bis zum {de_date(fund_stats['trough_date'])}. "
+    f"Die Sortino-Ratio beträgt {sortino_summary} bei einem Zielwert von 0 %. Rendite und Risikoverlauf sollten gemeinsam beurteilt werden. "
+    "Im Reiter Referenzindexvergleich wird der Fonds an denselben Stichtagen mit dem 80/20-MDAX/SDAX-Index verglichen; dabei ist die unterschiedliche Renditebasis zu beachten."
 )
 
-profile_tab, fund_tab, benchmark_tab, data_tab = st.tabs(["Fund profile", "Fund performance", "Benchmark comparison", "Data and methodology"])
+profile_tab, fund_tab, benchmark_tab, data_tab = st.tabs(["Fondsprofil", "Fondsentwicklung", "Referenzindexvergleich", "Daten und Methodik"])
 
 with profile_tab:
-    st.subheader("Fund profile and portfolio snapshot")
-    st.caption(f"Transcribed from the supplied Deka presentation · composition and ratings as of {PROFILE_AS_OF}")
+    st.subheader("Fondsprofil und Portfoliostand")
+    st.caption(f"Aus der bereitgestellten Deka-Präsentation übernommen · Zusammensetzung und Bewertungen zum {PROFILE_AS_OF}")
     st.subheader("Fondsratings")
     rating_left, rating_right = st.columns(2)
     rating_left.metric("Morningstar", "★★★☆☆ · 3 von 5 Sternen")
-    rating_right.metric("Scope Funds Rating", "C")
-    st.caption(f"Rating snapshot from the supplied Deka presentation · {PROFILE_AS_OF}. Ratings are historical snapshots and can change.")
+    rating_right.metric("Scope-Fondsrating", "C")
+    st.caption(f"Ratingstand laut bereitgestellter Deka-Präsentation vom {PROFILE_AS_OF}. Bewertungen sind stichtagsbezogen und können sich ändern.")
     p1, p2, p3, p4 = st.columns(4)
-    p1.metric("Fund launch", "03.06.2013")
-    p2.metric("Distribution", "Distributing")
-    p3.metric("Minimum investment", "€25")
-    p4.metric("Financial year-end", "31 May")
+    p1.metric("Fondsauflegung", "03.06.2013")
+    p2.metric("Ertragsverwendung", "Ausschüttend")
+    p3.metric("Mindestanlage", "€25")
+    p4.metric("Geschäftsjahresende", "31. Mai")
 
     left, right = st.columns(2)
     with left:
-        industry_frame = pd.DataFrame({"Industry": list(INDUSTRIES), "Share (%)": list(INDUSTRIES.values())}).sort_values("Share (%)")
-        industry_chart = go.Figure(go.Bar(x=industry_frame["Share (%)"], y=industry_frame["Industry"], orientation="h", marker_color="#C8102E", text=industry_frame["Share (%)"].map(lambda x: f"{x:.1f}%"), textposition="outside"))
-        industry_chart.update_layout(title=f"Largest industries · {PROFILE_AS_OF}", xaxis_title="Portfolio share (%)", yaxis_title="", template="plotly_white", margin={"l": 10, "r": 40, "t": 55, "b": 35})
+        industry_frame = pd.DataFrame({"Branche": list(INDUSTRIES), "Anteil (%)": list(INDUSTRIES.values())}).sort_values("Anteil (%)")
+        industry_chart = go.Figure(go.Bar(x=industry_frame["Anteil (%)"], y=industry_frame["Branche"], orientation="h", marker_color="#C8102E", text=industry_frame["Anteil (%)"].map(lambda x: f"{x:.1f}%".replace(".", ",")), textposition="outside"))
+        industry_chart.update_layout(title=f"Größte Branchen · {PROFILE_AS_OF}", xaxis_title="Portfolioanteil (%)", yaxis_title="", template="plotly_white", margin={"l": 10, "r": 40, "t": 55, "b": 35})
         st.plotly_chart(style_deka_chart(industry_chart), use_container_width=True)
     with right:
-        holding_frame = pd.DataFrame({"Security": list(TOP_HOLDINGS), "Share (%)": list(TOP_HOLDINGS.values())}).sort_values("Share (%)")
-        holdings_chart = go.Figure(go.Bar(x=holding_frame["Share (%)"], y=holding_frame["Security"], orientation="h", marker_color="#527D89", text=holding_frame["Share (%)"].map(lambda x: f"{x:.1f}%"), textposition="outside"))
-        holdings_chart.update_layout(title=f"Top ten holdings · {PROFILE_AS_OF}", xaxis_title="Portfolio share (%)", yaxis_title="", template="plotly_white", margin={"l": 10, "r": 40, "t": 55, "b": 35})
+        holding_frame = pd.DataFrame({"Wertpapier": list(TOP_HOLDINGS), "Anteil (%)": list(TOP_HOLDINGS.values())}).sort_values("Anteil (%)")
+        holdings_chart = go.Figure(go.Bar(x=holding_frame["Anteil (%)"], y=holding_frame["Wertpapier"], orientation="h", marker_color="#527D89", text=holding_frame["Anteil (%)"].map(lambda x: f"{x:.1f}%".replace(".", ",")), textposition="outside"))
+        holdings_chart.update_layout(title=f"Zehn größte Positionen · {PROFILE_AS_OF}", xaxis_title="Portfolioanteil (%)", yaxis_title="", template="plotly_white", margin={"l": 10, "r": 40, "t": 55, "b": 35})
         st.plotly_chart(style_deka_chart(holdings_chart), use_container_width=True)
 
     top_sector_total = sum(INDUSTRIES.values())
     top_holding_total = sum(TOP_HOLDINGS.values())
-    st.write(f"The ten largest industry groups shown represent **{top_sector_total:.1f}%** of the portfolio; the ten largest holdings represent **{top_holding_total:.1f}%**. The industry chart is a partial breakdown of the largest groups, not the full portfolio allocation.")
-    st.info("These are static presentation figures dated 30 September 2026. They are included as context for the Excel-period performance assessment and should not be read as current or as holdings on every date in the performance series.")
+    top_sector_share = de_num(top_sector_total, 1)
+    st.write(f"Die zehn größten dargestellten Branchen machen **{top_sector_share}%** des Portfolios aus; die zehn größten Positionen zusammen **{de_num(top_holding_total, 1)}%**. Die Branchengrafik zeigt nur die größten Gruppen, nicht die vollständige Portfolioaufteilung.")
+    st.info("Dies sind statische Angaben aus der Präsentation mit Stand 30. September 2026. Sie dienen als Kontext zur Wertentwicklung im Excel-Zeitraum und sind weder als aktuelle Bestände noch als Bestände an jedem Beobachtungstag zu verstehen.")
 
-    with st.expander("Costs and independent ratings shown in the presentation"):
-        st.markdown("- Annual management fee: **1.86%**; transaction costs: **0.40%**; performance fee: **0.41%** under specified conditions (presentation cost snapshot dated 01.10.2026).\n- The presentation shows a maximum issue surcharge of **3.610%** in its performance explanation. Entry charges depend on the channel and are excluded from the fund-price return calculated here.\n- Ratings panel dated 30.09.2026: Morningstar **3/5 stars**; Scope **C**. These are the presentation’s displayed ratings, not a fresh rating check.")
+    with st.expander("Kosten und unabhängige Bewertungen laut Präsentation"):
+        st.markdown(
+            """- Jährliche Verwaltungsvergütung: **1,86 %**; Transaktionskosten: **0,40 %**; erfolgsabhängige Vergütung: **0,41 %** unter bestimmten Voraussetzungen (Kostenstand der Präsentation: 01.10.2026).
+- Die Präsentation nennt in ihrer Erläuterung zur Wertentwicklung einen maximalen Ausgabeaufschlag von **3,610 %**. Einstiegskosten hängen vom Vertriebskanal ab und sind nicht in der hier berechneten Fondskursrendite enthalten.
+- Ratings zum 30.09.2026: Morningstar **3/5 Sterne**; Scope **C**. Dies sind die in der Präsentation gezeigten Werte, keine aktuelle Ratingabfrage."""
+        )
 
 with fund_tab:
     performance = go.Figure()
-    performance.add_trace(go.Scatter(x=fund["Date"], y=fund["Price"], mode="lines", name="Fund price (EUR)", line={"color": "#C8102E", "width": 3}, hovertemplate="%{x|%d.%m.%Y}<br>Price: %{y:.2f} EUR<extra></extra>"))
-    performance.update_layout(title="Fund price development", xaxis_title="Date", yaxis_title="Fund price (EUR)", template="plotly_white", hovermode="x unified")
+    performance.add_trace(go.Scatter(x=fund["Date"], y=fund["Price"], mode="lines", name="Fondspreis (EUR)", line={"color": "#C8102E", "width": 3}, hovertemplate="%{x|%d.%m.%Y}<br>Kurs: %{y:.2f} EUR<extra></extra>"))
+    performance.update_layout(title="Entwicklung des Fondspreises", xaxis_title="Datum", yaxis_title="Fondspreis (EUR)", template="plotly_white", hovermode="x unified", xaxis_tickformat="%d.%m.%Y")
     st.plotly_chart(style_deka_chart(performance), use_container_width=True)
 
     drawdown = fund["Fund_Wealth"] / fund["Fund_Wealth"].cummax() - 1.0
     dd_chart = go.Figure()
-    dd_chart.add_trace(go.Scatter(x=fund["Date"], y=drawdown * 100.0, mode="lines", fill="tozeroy", name="Drawdown", line={"color": "#C8102E", "width": 2}))
-    dd_chart.update_layout(title="Fund drawdown from prior peak", xaxis_title="Date", yaxis_title="Drawdown (%)", template="plotly_white", hovermode="x unified")
+    dd_chart.add_trace(go.Scatter(x=fund["Date"], y=drawdown * 100.0, mode="lines", fill="tozeroy", name="Kursrückgang", line={"color": "#C8102E", "width": 2}))
+    dd_chart.update_layout(title="Kursrückgang vom vorherigen Höchststand", xaxis_title="Datum", yaxis_title="Kursrückgang (%)", template="plotly_white", hovermode="x unified", xaxis_tickformat="%d.%m.%Y")
     st.plotly_chart(style_deka_chart(dd_chart), use_container_width=True)
 
     r1, r2, r3 = st.columns(3)
-    r1.metric("Current drawdown from peak", pct(fund_stats["current_drawdown_pct"]))
-    r2.metric("Peak before maximum drawdown", fund_stats["peak_date"].strftime("%d %b %Y"))
-    r3.metric("Maximum drawdown trough", fund_stats["trough_date"].strftime("%d %b %Y"))
+    r1.metric("Aktueller Rückgang vom Höchststand", pct(fund_stats["current_drawdown_pct"]))
+    r2.metric("Höchststand vor dem maximalen Rückgang", de_date(fund_stats["peak_date"]))
+    r3.metric("Tiefpunkt des maximalen Rückgangs", de_date(fund_stats["trough_date"]))
     if fund_stats["recovery_date"] is not None:
-        st.write(f"The maximum drawdown recovered its previous peak on **{fund_stats['recovery_date']:%d %b %Y}**, {fund_stats['recovery_days']} calendar days after the trough.")
+        st.write(f"Der Fonds erreichte seinen vorherigen Höchststand am **{de_date(fund_stats['recovery_date'])}** wieder, {fund_stats['recovery_days']} Kalendertage nach dem Tiefpunkt.")
     else:
-        st.write(f"The maximum drawdown had not regained its prior peak by **{end_date:%d %b %Y}**; the fund remained below that peak for {fund_stats['underwater_days']} calendar days from the peak date.")
+        st.write(f"Bis zum **{de_date(end_date)}** hatte der Fonds den vorherigen Höchststand noch nicht wieder erreicht; seit dem Höchststand lag er {fund_stats['underwater_days']} Kalendertage darunter.")
 
     risk1, risk2, risk3, risk4, risk5 = st.columns(5)
-    risk1.metric("Annualized downside deviation", f"{fund_stats['downside_deviation_pct']:.2f}%" if np.isfinite(fund_stats["downside_deviation_pct"]) else "n/a")
-    risk2.metric("Sortino ratio · 0% target", f"{fund_stats['sortino_ratio']:.2f}" if np.isfinite(fund_stats["sortino_ratio"]) else "n/a")
-    risk3.metric("Historical daily VaR · 95%", pct(fund_stats["var_95_pct"]))
-    risk4.metric("Historical daily CVaR · 95%", pct(fund_stats["cvar_95_pct"]))
-    risk5.metric("Positive observations", f"{fund_stats['positive_days_pct']:.1f}%" if np.isfinite(fund_stats["positive_days_pct"]) else "n/a")
-    st.caption("Downside deviation and Sortino use a 0% daily target and are annualized with 252 trading days. Historical VaR is the 5th percentile of observed daily returns; CVaR is the average return in that worst 5% tail. These are backward-looking estimates, not loss limits or forecasts.")
+    risk1.metric("Abwärtsabweichung p. a.", f"{fund_stats['downside_deviation_pct']:.2f}%".replace(".", ",") if np.isfinite(fund_stats["downside_deviation_pct"]) else "k. A.")
+    risk2.metric("Sortino-Ratio · 0 %-Ziel", f"{fund_stats['sortino_ratio']:.2f}".replace(".", ",") if np.isfinite(fund_stats["sortino_ratio"]) else "k. A.")
+    risk3.metric("Historischer Tages-VaR · 95 %", pct(fund_stats["var_95_pct"]))
+    risk4.metric("Historischer Tages-CVaR · 95 %", pct(fund_stats["cvar_95_pct"]))
+    risk5.metric("Anteil positiver Beobachtungen", f"{fund_stats['positive_days_pct']:.1f}%".replace(".", ",") if np.isfinite(fund_stats["positive_days_pct"]) else "k. A.")
+    st.caption("Abwärtsabweichung und Sortino-Ratio verwenden ein tägliches Ziel von 0 % und werden mit 252 Handelstagen annualisiert. Der historische VaR entspricht dem 5. Perzentil der beobachteten Tagesrenditen; der CVaR ist die durchschnittliche Rendite im schlechtesten 5-%-Randbereich. Dies sind rückblickende Schätzwerte, keine Verlustgrenzen oder Prognosen.")
 
     best_date = fund_dates_indexed["Fund_Return"].idxmax()
     worst_date = fund_dates_indexed["Fund_Return"].idxmin()
     best, worst = st.columns(2)
-    best.metric("Best observed daily return", pct(fund_stats["best_day_pct"]), help=f"Observation date: {best_date:%d %b %Y}")
-    worst.metric("Worst observed daily return", pct(fund_stats["worst_day_pct"]), help=f"Observation date: {worst_date:%d %b %Y}")
+    best.metric("Bester beobachteter Tageswert", pct(fund_stats["best_day_pct"]), help=f"Beobachtungstag: {de_date(best_date)}")
+    worst.metric("Schlechtester beobachteter Tageswert", pct(fund_stats["worst_day_pct"]), help=f"Beobachtungstag: {de_date(worst_date)}")
 
     monthly_source = fund.dropna(subset=["Fund_Return"]).copy()
     monthly = monthly_source.groupby(monthly_source["Date"].dt.to_period("M"))["Fund_Return"].apply(lambda values: (1.0 + values).prod() - 1.0)
     monthly.index = monthly.index.to_timestamp(how="end").normalize()
     monthly_chart = go.Figure()
-    monthly_chart.add_trace(go.Bar(x=monthly.index, y=monthly.values * 100.0, marker_color=["#18866B" if value >= 0 else "#C8102E" for value in monthly.values], name="Monthly price return"))
-    monthly_chart.update_layout(title="Monthly compounded fund price returns", xaxis_title="Month", yaxis_title="Return (%)", template="plotly_white")
+    monthly_chart.add_trace(go.Bar(x=monthly.index, y=monthly.values * 100.0, marker_color=["#18866B" if value >= 0 else "#C8102E" for value in monthly.values], name="Monatliche Kursrendite"))
+    monthly_chart.update_layout(title="Aufgezinste monatliche Fondskursrenditen", xaxis_title="Monat", yaxis_title="Rendite (%)", template="plotly_white", xaxis_tickformat="%m.%Y")
     st.plotly_chart(style_deka_chart(monthly_chart), use_container_width=True)
     monthly_positive = int((monthly > 0).sum())
-    st.caption(f"Positive months: {monthly_positive} of {len(monthly)}. The first monthly figure starts at the last available 2025 price, and the last month ends at the latest Excel observation.")
+    st.caption(f"Monate mit positiver Rendite: {monthly_positive} von {len(monthly)}. Der erste Monatswert beginnt mit dem letzten verfügbaren Fondspreis 2025; der letzte Monat endet mit der jüngsten Excel-Beobachtung.")
 
 with benchmark_tab:
-    st.subheader("Deka reference index: 80% MDAX / 20% SDAX")
-    st.caption("Yahoo Finance daily closes for ^MDAXI and ^SDAXI. The composite is calculated as 80% × MDAX daily return + 20% × SDAX daily return and rebalanced to those weights each trading day.")
+    st.subheader("Deka-Referenzindex: 80 % MDAX / 20 % SDAX")
+    st.caption("Tägliche Schlusskurse von Yahoo Finance für ^MDAXI und ^SDAXI. Die Kombination wird als 80 % × tägliche MDAX-Rendite + 20 % × tägliche SDAX-Rendite berechnet und an jedem Handelstag auf diese Gewichte zurückgesetzt.")
     benchmark_error = None
     benchmark = None
     try:
         end_exclusive = (end_date + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-        with st.spinner("Loading Yahoo Finance index data for the Excel dates…"):
+        with st.spinner("Yahoo-Finance-Indexdaten für die Excel-Beobachtungstage werden geladen …"):
             index_data = download_yahoo_indices(start_date.strftime("%Y-%m-%d"), end_exclusive)
         benchmark = make_benchmark(index_data, fund_dates)
     except Exception as exc:
@@ -478,8 +493,8 @@ with benchmark_tab:
 
     if benchmark_error:
         st.error(
-            "A same-date benchmark comparison is unavailable. No synthetic values or substitute dates are used. "
-            f"Details: {benchmark_error}"
+            "Ein Vergleich mit dem Referenzindex zu denselben Stichtagen ist nicht verfügbar. Es werden keine Ersatzwerte oder Ersatzstichtage verwendet. "
+            f"Fehlerdetails: {benchmark_error}"
         )
     else:
         fund_return = fund_stats["return_pct"]
@@ -488,26 +503,26 @@ with benchmark_tab:
         benchmark_stats = calculate_metrics(benchmark["Benchmark_Return"], benchmark["Benchmark_Wealth"])
 
         st.warning(
-            "Return-basis caveat: the Excel file contains fund prices only, while Yahoo's default MDAX/SDAX series are performance indices. "
-            "The benchmark includes dividends; the fund price return shown here does not. The return gap is therefore not a like-for-like total-return comparison and is not alpha."
+            "Hinweis zur Renditebasis: Die Excel-Datei enthält nur Fondspreise; die MDAX-/SDAX-Reihen von Yahoo sind Performanceindizes. "
+            "Der Referenzindex berücksichtigt Dividenden, die Fondskursrendite hier nicht. Die Differenz ist deshalb kein Vergleich auf gleicher Gesamtrenditebasis und kein Alpha."
         )
         st.warning(
-            "The app calculates the 80/20 composite by daily rebalancing. Deka's public reference-index description gives the component weights, but the Excel file does not provide an official composite return series or its detailed calculation convention."
+            "Diese App berechnet die 80/20-Kombination mit täglicher Anpassung der Gewichte. Deka veröffentlicht die Indexgewichte; die Excel-Datei enthält jedoch weder eine offizielle zusammengesetzte Renditereihe noch deren detaillierte Berechnungsmethode."
         )
 
         b1, b2, b3, b4 = st.columns(4)
-        b1.metric("Fund price return", pct(fund_return))
-        b2.metric("Yahoo 80/20 benchmark return", pct(benchmark_return))
-        b3.metric("Difference (percentage points)", f"{gap_pp:+.2f} pp".replace(".", ","))
-        b4.metric("Benchmark volatility", f"{benchmark_stats['volatility_pct']:.2f}%" if np.isfinite(benchmark_stats["volatility_pct"]) else "n/a")
+        b1.metric("Fondskursrendite", pct(fund_return))
+        b2.metric("Yahoo-Referenzindexrendite 80/20", pct(benchmark_return))
+        b3.metric("Abweichung (Prozentpunkte)", f"{gap_pp:+.2f} Prozentpunkte".replace(".", ","))
+        b4.metric("Volatilität des Referenzindex p. a.", f"{benchmark_stats['volatility_pct']:.2f}%".replace(".", ",") if np.isfinite(benchmark_stats["volatility_pct"]) else "k. A.")
 
         comparison = go.Figure()
-        comparison.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fund price return", line={"color": "#C8102E", "width": 3}))
-        comparison.add_trace(go.Scatter(x=benchmark.index, y=benchmark["Benchmark_Wealth"], mode="lines", name="80% MDAX / 20% SDAX", line={"color": "#527D89", "width": 2}))
-        comparison.update_layout(title="Fund and benchmark over identical Excel dates", xaxis_title="Date", yaxis_title="Value (first Excel date = 100)", template="plotly_white", hovermode="x unified")
+        comparison.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fondskursrendite", line={"color": "#C8102E", "width": 3}))
+        comparison.add_trace(go.Scatter(x=benchmark.index, y=benchmark["Benchmark_Wealth"], mode="lines", name="80 % MDAX / 20 % SDAX", line={"color": "#527D89", "width": 2}))
+        comparison.update_layout(title="Fonds und Referenzindex an identischen Excel-Stichtagen", xaxis_title="Datum", yaxis_title="Entwicklung (erster Excel-Stichtag = 100)", template="plotly_white", hovermode="x unified")
         st.plotly_chart(style_deka_chart(comparison), use_container_width=True)
         st.subheader("Wertentwicklung")
-        st.caption("Fondsrendite aus der Excel-Preisreihe und Benchmarkrendite aus dem 80/20-MDAX/SDAX-Index auf denselben Excel-Beobachtungstagen.")
+        st.caption("Fondskursrendite aus der Excel-Reihe und Rendite des 80/20-MDAX-/SDAX-Referenzindex an denselben Excel-Beobachtungstagen.")
 
         fund_wealth_by_date = fund.set_index("Date")["Fund_Wealth"]
         benchmark_wealth_by_date = benchmark["Benchmark_Wealth"]
@@ -518,16 +533,16 @@ with benchmark_tab:
             benchmark_period_return = (benchmark_wealth_by_date.loc[period_end] / benchmark_wealth_by_date.loc[baseline_date] - 1.0) * 100.0
             period_rows.append({
                 "Zeitraum": label,
-                "Fonds (Excel-Preisrendite)": f"{fund_period_return:+.2f}%".replace(".", ","),
-                "Benchmark (80/20)": f"{benchmark_period_return:+.2f}%".replace(".", ","),
-                "Differenz": f"{fund_period_return - benchmark_period_return:+.2f} pp".replace(".", ","),
+                "Fonds (Excel-Kursrendite)": f"{fund_period_return:+.2f}%".replace(".", ","),
+                "Referenzindex (80/20)": f"{benchmark_period_return:+.2f}%".replace(".", ","),
+                "Abweichung (Prozentpunkte)": f"{fund_period_return - benchmark_period_return:+.2f} Prozentpunkte".replace(".", ","),
             })
 
         year_observations = fund.loc[fund["Date"].dt.year.eq(2026), "Date"]
         if not year_observations.empty:
             ytd_start = fund_dates[0] if has_ytd_baseline else year_observations.iloc[0]
             ytd_end = year_observations.iloc[-1]
-            add_return_period(f"YTD 2026 · {ytd_start:%d.%m.%Y}–{ytd_end:%d.%m.%Y}", ytd_start, ytd_end)
+            add_return_period(f"Seit Jahresbeginn 2026 · {ytd_start:%d.%m.%Y}–{ytd_end:%d.%m.%Y}", ytd_start, ytd_end)
 
             monthly_dates = fund.loc[fund["Date"].dt.year.eq(2026), ["Date"]].copy()
             monthly_dates["Month"] = monthly_dates["Date"].dt.to_period("M")
@@ -538,7 +553,7 @@ with benchmark_tab:
                 if first_position == 0:
                     continue
                 baseline = fund_dates[first_position - 1]
-                add_return_period(f"{month.strftime('%b %Y')} · {baseline:%d.%m.%Y}–{end_of_month:%d.%m.%Y}", baseline, end_of_month)
+                add_return_period(f"{GERMAN_MONTHS[month.month - 1]} {month.year} · {baseline:%d.%m.%Y}–{end_of_month:%d.%m.%Y}", baseline, end_of_month)
 
         if period_rows:
             returns_table = pd.DataFrame(period_rows)
@@ -550,7 +565,7 @@ with benchmark_tab:
                     return "color: #C8102E; font-weight: 600"
                 return ""
 
-            style_subset = ["Fonds (Excel-Preisrendite)", "Benchmark (80/20)", "Differenz"]
+            style_subset = ["Fonds (Excel-Kursrendite)", "Referenzindex (80/20)", "Abweichung (Prozentpunkte)"]
             styler = style_deka_table(returns_table)
             style_map = getattr(styler, "map", None)
             if style_map is not None:
@@ -558,59 +573,60 @@ with benchmark_tab:
             else:
                 styled_returns = styler.applymap(return_color, subset=style_subset)
             st.dataframe(styled_returns, hide_index=True, use_container_width=True)
-        st.caption("Eine separate Brutto- und Nettowertentwicklung lässt sich aus der Excel-Datei nicht berechnen: Sie enthält nur eine Fonds-Preisreihe und keine separate Anlegerkostenreihe. Die Tabelle weist daher die beobachtete Preisrendite aus; sie ist keine BVI-Bruttowertentwicklung und enthält keine individuelle Anlegerkostenberechnung.")
+        st.caption("Eine getrennte Brutto- und Nettowertentwicklung lässt sich aus der Excel-Datei nicht ermitteln: Sie enthält nur eine Fondspreisreihe, aber keine gesonderten Angaben zu Anlegerkosten. Die Tabelle zeigt daher die beobachtete Kursrendite; sie ist keine BVI-Bruttowertentwicklung und enthält keine individuelle Anlegerkostenberechnung.")
 
-        pct_metrics = ["Return", "Annualized volatility", "Annualized downside deviation", "Maximum drawdown", "Current drawdown"]
+        pct_metrics = ["Rendite", "Volatilität p. a.", "Abwärtsabweichung p. a.", "Maximaler Verlust (Drawdown)", "Aktueller Abstand zum Höchststand"]
         fund_risk_values = [fund_stats["return_pct"], fund_stats["volatility_pct"], fund_stats["downside_deviation_pct"], fund_stats["sortino_ratio"], fund_stats["max_drawdown_pct"], fund_stats["current_drawdown_pct"]]
         benchmark_risk_values = [benchmark_stats["return_pct"], benchmark_stats["volatility_pct"], benchmark_stats["downside_deviation_pct"], benchmark_stats["sortino_ratio"], benchmark_stats["max_drawdown_pct"], benchmark_stats["current_drawdown_pct"]]
-        risk_labels = ["Return", "Annualized volatility", "Annualized downside deviation", "Sortino ratio (0% target)", "Maximum drawdown", "Current drawdown"]
-        format_risk = lambda values: ["n/a" if not np.isfinite(value) else (f"{value:+.2f}%" if label in pct_metrics else f"{value:.2f}") for label, value in zip(risk_labels, values)]
-        risk_table = pd.DataFrame({"Metric": risk_labels, "Fund (Excel price series)": format_risk(fund_risk_values), "80/20 Yahoo composite": format_risk(benchmark_risk_values)})
+        risk_labels = ["Rendite", "Volatilität p. a.", "Abwärtsabweichung p. a.", "Sortino-Ratio (0 %-Ziel)", "Maximaler Verlust (Drawdown)", "Aktueller Abstand zum Höchststand"]
+        format_risk = lambda values: ["k. A." if not np.isfinite(value) else (f"{value:+.2f}%".replace(".", ",") if label in pct_metrics else f"{value:.2f}".replace(".", ",")) for label, value in zip(risk_labels, values)]
+        risk_table = pd.DataFrame({"Kennzahl": risk_labels, "Fonds (Excel-Kursreihe)": format_risk(fund_risk_values), "Yahoo-Referenzindex 80/20": format_risk(benchmark_risk_values)})
         st.dataframe(style_deka_table(risk_table), hide_index=True, use_container_width=True)
 
         paired_returns = pd.concat(
-            [fund_dates_indexed["Fund_Return"].rename("Fund"), benchmark["Benchmark_Return"].rename("Benchmark")], axis=1
+            [fund_dates_indexed["Fund_Return"].rename("Fund"), benchmark["Benchmark_Return"].rename("Referenzindex")], axis=1
         ).dropna()
-        if len(paired_returns) > 2 and paired_returns["Benchmark"].var(ddof=1) > 0:
-            active_returns = paired_returns["Fund"] - paired_returns["Benchmark"]
-            beta = float(paired_returns["Fund"].cov(paired_returns["Benchmark"]) / paired_returns["Benchmark"].var(ddof=1))
-            correlation = float(paired_returns["Fund"].corr(paired_returns["Benchmark"]))
+        if len(paired_returns) > 2 and paired_returns["Referenzindex"].var(ddof=1) > 0:
+            active_returns = paired_returns["Fund"] - paired_returns["Referenzindex"]
+            beta = float(paired_returns["Fund"].cov(paired_returns["Referenzindex"]) / paired_returns["Referenzindex"].var(ddof=1))
+            correlation = float(paired_returns["Fund"].corr(paired_returns["Referenzindex"]))
             tracking_error = float(active_returns.std(ddof=1) * np.sqrt(252) * 100.0)
             information_ratio = float(active_returns.mean() * 252 / (tracking_error / 100.0)) if tracking_error > 0 else float("nan")
             a1, a2, a3, a4 = st.columns(4)
-            a1.metric("Return correlation", f"{correlation:.2f}")
-            a2.metric("Beta to 80/20 benchmark", f"{beta:.2f}")
-            a3.metric("Annualized tracking error", f"{tracking_error:.2f}%")
-            a4.metric("Information ratio", f"{information_ratio:.2f}" if np.isfinite(information_ratio) else "n/a")
-            st.caption("Beta, correlation, tracking error and information ratio use paired returns from identical Excel dates. Since fund price return and Yahoo performance-index return have different dividend treatment, active-risk measures are indicative rather than like-for-like skill measures.")
+            a1.metric("Renditekorrelation", f"{correlation:.2f}".replace(".", ","))
+            a2.metric("Beta zum 80/20-Referenzindex", f"{beta:.2f}".replace(".", ","))
+            a3.metric("Nachbildungsfehler p. a.", f"{tracking_error:.2f}%".replace(".", ","))
+            a4.metric("Information Ratio", f"{information_ratio:.2f}".replace(".", ",") if np.isfinite(information_ratio) else "k. A.")
+            st.caption("Beta, Korrelation, Nachbildungsfehler und Information Ratio verwenden Renditen zu identischen Excel-Stichtagen. Da Fondskursrendite und Yahoo-Performanceindex Dividenden unterschiedlich behandeln, sind die aktiven Risikokennzahlen nur indikativ und kein direkter Leistungsvergleich.")
         if gap_pp > 0.05:
-            st.write(f"On the same Excel dates, the fund's price return was {gap_pp:.2f} percentage points above the calculated 80/20 benchmark. Interpret this directionally because the return bases differ.")
+            st.write(f"An denselben Excel-Stichtagen lag die Fondskursrendite um {gap_pp:.2f} Prozentpunkte über der berechneten 80/20-Referenzindex. Wegen der unterschiedlichen Renditebasis ist dies nur als Richtungshinweis zu verstehen.")
         elif gap_pp < -0.05:
-            st.write(f"On the same Excel dates, the fund's price return was {abs(gap_pp):.2f} percentage points below the calculated 80/20 benchmark. Interpret this directionally because the return bases differ.")
+            st.write(f"An denselben Excel-Stichtagen lag die Fondskursrendite um {abs(gap_pp):.2f} Prozentpunkte unter der berechneten 80/20-Referenzindex. Wegen der unterschiedlichen Renditebasis ist dies nur als Richtungshinweis zu verstehen.")
         else:
-            st.write("On the same Excel dates, the fund price return and calculated 80/20 benchmark return were close. The return bases still differ.")
+            st.write("An denselben Excel-Stichtagen lagen Fondskursrendite und berechnete 80/20-Referenzindex nahe beieinander. Die Renditegrundlagen unterscheiden sich weiterhin.")
 
 with data_tab:
-    st.subheader("Source data")
-    st.write(f"Fund source: `{FUND_FILE.name}`")
-    st.write(f"Fund observations: **{len(fund)}**, from **{start_date:%Y-%m-%d}** through **{end_date:%Y-%m-%d}**.")
-    st.write("Benchmark source: Yahoo Finance via `yfinance`, symbols `^MDAXI` and `^SDAXI`.")
-    st.write("Deka reference weights: 80% MDAX and 20% SDAX.")
+    st.subheader("Quelldaten")
+    st.write(f"Fondsquelle: `{FUND_FILE.name}`")
+    st.write(f"Fondsbeobachtungen: **{len(fund)}**, vom **{start_date:%d.%m.%Y}** bis **{end_date:%d.%m.%Y}**.")
+    st.write("Referenzindexquelle: Yahoo Finance über `yfinance`, Symbole `^MDAXI` und `^SDAXI`.")
+    st.write("Deka-Referenzgewichte: 80 % MDAX und 20 % SDAX.")
     st.markdown(
-        "**Calculations**\n"
-        "- 2026 YTD price return = latest 2026 Excel price / last 2025 Excel price − 1 (the last 2025 observation is the baseline).\n"
-        "- Daily fund return = today's Excel price / previous Excel price − 1.\n"
-        "- Benchmark daily return = 0.80 × MDAX daily return + 0.20 × SDAX daily return; benchmark wealth is compounded daily and sampled on the Excel dates.\n"
-        "- Both wealth series begin at 100 on the first Excel date and end on the last Excel date.\n"
-        "- Annualized volatility = sample standard deviation of daily returns × √252.\n"
-        "- Maximum drawdown = lowest daily wealth value relative to its prior running maximum.\n"
-        "- Downside deviation and Sortino use a 0% daily target; historical VaR/CVaR use the observed lower 5% tail.\n"
-        "- The displayed return difference is measured in percentage points; it is not risk-adjusted alpha."
+        "**Berechnungen**\n"
+        "- Kursrendite seit Jahresbeginn 2026 = letzter Excel-Fondspreis 2026 / letzter Excel-Fondspreis 2025 − 1 (letzte Beobachtung 2025 als Basis).\n"
+        "- Tägliche Fondsrendite = heutiger Excel-Fondspreis / vorheriger Excel-Fondspreis − 1.\n"
+        "- Tägliche Referenzindexrendite = 0,80 × tägliche MDAX-Rendite + 0,20 × tägliche SDAX-Rendite; der Referenzindex wird täglich aufgezinzt und zu den Excel-Stichtagen ausgewiesen.\n"
+        "- Beide Vergleichsreihen beginnen am ersten Excel-Stichtag bei 100 und enden am letzten Excel-Stichtag.\n"
+        "- Volatilität p. a. = Stichprobenstandardabweichung der Tagesrenditen × √252.\n"
+        "- Maximaler Drawdown = niedrigster Tageswert im Verhältnis zum vorherigen Höchststand.\n"
+        "- Abwärtsabweichung und Sortino-Ratio verwenden ein tägliches Ziel von 0 %; der historische VaR/CVaR basiert auf den schlechtesten beobachteten 5 %.\n"
+        "- Die Renditedifferenz wird in Prozentpunkten gemessen; sie ist kein risikobereinigtes Alpha."
     )
     export = fund[["Date", "Price", "Fund_Return", "Fund_Wealth"]].copy()
-    st.download_button("Download Excel-date fund calculation table", export.to_csv(index=False).encode("utf-8-sig"), file_name="deka_fund_calculations.csv", mime="text/csv")
+    export.columns = ["Datum", "Fondspreis (EUR)", "Tagesrendite", "Wertentwicklung (Basis 100)"]
+    st.download_button("Fondsberechnungstabelle herunterladen", export.to_csv(index=False).encode("utf-8-sig"), file_name="deka_fondsberechnungen.csv", mime="text/csv")
     st.dataframe(style_deka_table(export.tail(20)), hide_index=True, use_container_width=True)
 
 st.divider()
-st.caption("Fund data is read only from the supplied Excel workbook. Benchmark data is downloaded from Yahoo Finance and cached for one hour. Yahoo data availability and history may change.")
+st.caption("Fondsdaten werden ausschließlich aus der bereitgestellten Excel-Datei gelesen. Daten des Referenzindex werden über Yahoo Finance abgerufen und eine Stunde zwischengespeichert. Verfügbarkeit und Historie der Yahoo-Daten können sich ändern.")
 
