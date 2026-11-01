@@ -198,6 +198,46 @@ def download_yahoo_indices(start_date: str, end_date_exclusive: str) -> pd.DataF
     return indices
 
 
+@st.cache_data(ttl=60 * 60, show_spinner=False)
+def download_yahoo_dax(start_date: str, end_date_exclusive: str) -> pd.Series:
+    """Lädt die täglichen Yahoo-DAX-Schlusskurse separat für den Excel-Zeitraum."""
+    try:
+        import yfinance as yf
+        data = yf.download(
+            tickers=["^GDAXI"],
+            start=start_date,
+            end=end_date_exclusive,
+            interval="1d",
+            auto_adjust=False,
+            actions=False,
+            group_by="ticker",
+            progress=False,
+            threads=False,
+            timeout=25,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Der Yahoo-Finance-Abruf des DAX ist fehlgeschlagen: {exc}") from exc
+    if data is None or data.empty:
+        raise RuntimeError("Yahoo Finance hat für den Excel-Zeitraum keine DAX-Daten geliefert.")
+    matches = []
+    for column in data.columns:
+        parts = column if isinstance(column, tuple) else (column,)
+        normalised = {str(part).strip().casefold() for part in parts}
+        if "close" in normalised and (
+            "^gdaxi" in normalised or (not isinstance(column, tuple) and str(column).strip().casefold() == "close")
+        ):
+            matches.append(column)
+    if len(matches) != 1:
+        raise RuntimeError("In der Yahoo-Antwort wurde keine eindeutige tägliche DAX-Schlusskursreihe (^GDAXI) gefunden.")
+    prices = pd.to_numeric(data[matches[0]], errors="coerce")
+    prices.index = pd.to_datetime(prices.index, utc=True).tz_convert(None).normalize()
+    prices = prices[~prices.index.duplicated(keep="last")].sort_index()
+    prices.name = "DAX"
+    if prices.empty or prices.isna().all() or (prices.dropna() <= 0).any():
+        raise RuntimeError("Die Yahoo-DAX-Schlusskurse sind leer oder ungültig.")
+    return prices
+
+
 def make_benchmark(indices: pd.DataFrame, fund_dates: pd.DatetimeIndex) -> pd.DataFrame:
     """Berechnet die täglich auf 80/20 zurückgesetzte Referenzindex und übernimmt Werte zu den Excel-Stichtagen."""
     daily = indices.loc[(indices.index >= fund_dates[0]) & (indices.index <= fund_dates[-1])].copy()
@@ -604,6 +644,39 @@ with benchmark_tab:
             st.write(f"An denselben Excel-Stichtagen lag die Fondskursrendite um {abs(gap_pp):.2f} Prozentpunkte unter der berechneten 80/20-Referenzindex. Wegen der unterschiedlichen Renditebasis ist dies nur als Richtungshinweis zu verstehen.")
         else:
             st.write("An denselben Excel-Stichtagen lagen Fondskursrendite und berechnete 80/20-Referenzindex nahe beieinander. Die Renditegrundlagen unterscheiden sich weiterhin.")
+
+        st.subheader("Fonds, 80/20-Referenzindex und DAX an identischen Excel-Stichtagen")
+        st.caption("Die Tabelle zeigt den Fondspreis sowie die kumulierte Entwicklung von Fonds, täglich neugewichtetem 80/20-Referenzindex und Yahoo-DAX (^GDAXI), jeweils auf 100 am ersten Excel-Stichtag normiert. Es werden ausschließlich die Excel-Beobachtungstage verwendet.")
+        try:
+            with st.spinner("Yahoo-DAX-Daten für die Excel-Stichtage werden geladen …"):
+                dax_prices = download_yahoo_dax(start_date.strftime("%Y-%m-%d"), end_exclusive).reindex(fund_dates)
+        except Exception as exc:
+            dax_prices = None
+            st.error(f"Die Vergleichstabelle mit DAX ist nicht verfügbar. Die Fonds- und 80/20-Ansichten oben bleiben unverändert. Fehlerdetails: {exc}")
+        if dax_prices is not None and dax_prices.isna().any():
+            missing_dax_dates = dax_prices[dax_prices.isna()].index
+            examples = ", ".join(date.strftime("%d.%m.%Y") for date in missing_dax_dates[:5])
+            st.error(f"Für {len(missing_dax_dates)} Excel-Stichtag(e) fehlen DAX-Schlusskurse bei Yahoo Finance, darunter {examples}. Die Vergleichstabelle wird nicht mit fortgeschriebenen oder Ersatzwerten ergänzt.")
+        elif dax_prices is not None:
+            comparison_table = pd.DataFrame({
+                "Excel-Stichtag": fund_dates.strftime("%d.%m.%Y"),
+                "Fondspreis (€)": fund.set_index("Date").reindex(fund_dates)["Price"].to_numpy(),
+                "Fondsentwicklung (%)": (fund_wealth_by_date.reindex(fund_dates) - 100.0).to_numpy(),
+                "80/20-Referenzindex (%)": (benchmark_wealth_by_date.reindex(fund_dates) - 100.0).to_numpy(),
+                "DAX (^GDAXI; %)": ((dax_prices / dax_prices.iloc[0] - 1.0) * 100.0).to_numpy(),
+            })
+            st.dataframe(
+                style_deka_table(comparison_table),
+                hide_index=True,
+                use_container_width=True,
+                height=520,
+                column_config={
+                    "Fondspreis (€)": st.column_config.NumberColumn(format="%.2f €"),
+                    "Fondsentwicklung (%)": st.column_config.NumberColumn(format="%+.2f %%"),
+                    "80/20-Referenzindex (%)": st.column_config.NumberColumn(format="%+.2f %%"),
+                    "DAX (^GDAXI; %)": st.column_config.NumberColumn(format="%+.2f %%"),
+                },
+            )
 
 with data_tab:
     st.subheader("Quelldaten")
