@@ -556,13 +556,28 @@ with benchmark_tab:
         b3.metric("Abweichung (Prozentpunkte)", f"{gap_pp:+.2f} Prozentpunkte".replace(".", ","))
         b4.metric("Volatilität des Referenzindex p. a.", f"{benchmark_stats['volatility_pct']:.2f}%".replace(".", ",") if np.isfinite(benchmark_stats["volatility_pct"]) else "k. A.")
 
+        dax_prices = None
+        try:
+            with st.spinner("Yahoo-DAX-Daten für die Excel-Stichtage werden geladen …"):
+                dax_prices = download_yahoo_dax(start_date.strftime("%Y-%m-%d"), end_exclusive).reindex(fund_dates)
+            if dax_prices.isna().any():
+                missing_dax_dates = dax_prices[dax_prices.isna()].index
+                examples = ", ".join(date.strftime("%d.%m.%Y") for date in missing_dax_dates[:5])
+                st.warning(f"Der DAX wird im Diagramm und in der Tabelle ausgelassen, da für {len(missing_dax_dates)} Excel-Stichtag(e) Yahoo-Schlusskurse fehlen (z. B. {examples}). Es werden keine Werte fortgeschrieben.")
+                dax_prices = None
+        except Exception as exc:
+            st.warning(f"Yahoo-DAX-Daten sind derzeit nicht verfügbar; das Diagramm behält die bisherigen Fonds- und Referenzindexreihen bei. Fehlerdetails: {exc}")
+
         comparison = go.Figure()
         comparison.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fondskursrendite", line={"color": "#C8102E", "width": 3}))
         comparison.add_trace(go.Scatter(x=benchmark.index, y=benchmark["Benchmark_Wealth"], mode="lines", name="80 % MDAX / 20 % SDAX", line={"color": "#527D89", "width": 2}))
-        comparison.update_layout(title="Fonds und Referenzindex an identischen Excel-Stichtagen", xaxis_title="Datum", yaxis_title="Entwicklung (erster Excel-Stichtag = 100)", template="plotly_white", hovermode="x unified")
+        if dax_prices is not None:
+            dax_wealth = dax_prices / dax_prices.iloc[0] * 100.0
+            comparison.add_trace(go.Scatter(x=dax_wealth.index, y=dax_wealth, mode="lines", name="DAX (^GDAXI)", line={"color": "#829CA4", "width": 2}))
+        comparison.update_layout(title="Fonds, 80/20-Referenzindex und DAX an identischen Excel-Stichtagen", xaxis_title="Datum", yaxis_title="Entwicklung (erster Excel-Stichtag = 100)", template="plotly_white", hovermode="x unified")
         st.plotly_chart(style_deka_chart(comparison), use_container_width=True)
         st.subheader("Wertentwicklung")
-        st.caption("Fondskursrendite aus der Excel-Reihe und Rendite des 80/20-MDAX-/SDAX-Referenzindex an denselben Excel-Beobachtungstagen.")
+        st.caption("Fondskursrendite aus der Excel-Reihe, 80/20-MDAX-/SDAX-Referenzindex und Yahoo-DAX (^GDAXI), jeweils an denselben Excel-Beobachtungstagen.")
 
         fund_wealth_by_date = fund.set_index("Date")["Fund_Wealth"]
         benchmark_wealth_by_date = benchmark["Benchmark_Wealth"]
@@ -647,17 +662,7 @@ with benchmark_tab:
 
         st.subheader("Fonds, 80/20-Referenzindex und DAX an identischen Excel-Stichtagen")
         st.caption("Die Tabelle zeigt den Fondspreis sowie die kumulierte Entwicklung von Fonds, täglich neugewichtetem 80/20-Referenzindex und Yahoo-DAX (^GDAXI), jeweils auf 100 am ersten Excel-Stichtag normiert. Es werden ausschließlich die Excel-Beobachtungstage verwendet.")
-        try:
-            with st.spinner("Yahoo-DAX-Daten für die Excel-Stichtage werden geladen …"):
-                dax_prices = download_yahoo_dax(start_date.strftime("%Y-%m-%d"), end_exclusive).reindex(fund_dates)
-        except Exception as exc:
-            dax_prices = None
-            st.error(f"Die Vergleichstabelle mit DAX ist nicht verfügbar. Die Fonds- und 80/20-Ansichten oben bleiben unverändert. Fehlerdetails: {exc}")
-        if dax_prices is not None and dax_prices.isna().any():
-            missing_dax_dates = dax_prices[dax_prices.isna()].index
-            examples = ", ".join(date.strftime("%d.%m.%Y") for date in missing_dax_dates[:5])
-            st.error(f"Für {len(missing_dax_dates)} Excel-Stichtag(e) fehlen DAX-Schlusskurse bei Yahoo Finance, darunter {examples}. Die Vergleichstabelle wird nicht mit fortgeschriebenen oder Ersatzwerten ergänzt.")
-        elif dax_prices is not None:
+        if dax_prices is not None:
             comparison_table = pd.DataFrame({
                 "Excel-Stichtag": fund_dates.strftime("%d.%m.%Y"),
                 "Fondspreis (€)": fund.set_index("Date").reindex(fund_dates)["Price"].to_numpy(),
