@@ -392,7 +392,6 @@ def style_deka_table(frame: pd.DataFrame):
 
 
 st.title(f"📈 {FUND_NAME}")
-st.caption(f"ISIN {ISIN} · Fondspreise aus der bereitgestellten Excel-Datei · Referenzindex: 80 % MDAX / 20 % SDAX")
 
 try:
     source_fund = load_fund_prices()
@@ -409,8 +408,6 @@ fund["Fund_Wealth"] = 100.0 * (fund["Price"] / fund["Price"].iloc[0])
 fund_dates_indexed = fund.set_index("Date")
 fund_stats = calculate_metrics(fund_dates_indexed["Fund_Return"], fund_dates_indexed["Fund_Wealth"])
 
-st.info(f"Datenstand: **{de_date(end_date)}** · {len(fund)} Beobachtungen · Kursrendite ohne Ausschüttungen.")
-
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Kursrendite seit Jahresbeginn 2026", pct(fund_stats["return_pct"]), help="Vergleich zum letzten Fondspreis 2025.")
 c2.metric("Letzter Fondspreis", f"{fund['Price'].iloc[-1]:.2f} EUR".replace(".", ","))
@@ -419,16 +416,12 @@ c4.metric("Volatilität p. a.", f"{fund_stats['volatility_pct']:.2f}%".replace("
 
 
 
-profile_tab, fund_tab, benchmark_tab, data_tab = st.tabs(["Fondsprofil", "Fondsentwicklung", "Referenzindexvergleich", "Daten und Methodik"])
+profile_tab, fund_tab, benchmark_tab, data_tab = st.tabs(["Profil", "Fonds", "Vergleich", "Daten"])
 
 with profile_tab:
-    st.subheader("Fondsprofil und Portfoliostand")
-    st.caption(f"Portfolio und Ratings · Stand {PROFILE_AS_OF}")
-    st.subheader("Fondsratings")
     rating_left, rating_right = st.columns(2)
     rating_left.metric("Morningstar", "★★★☆☆ · 3 von 5 Sternen")
     rating_right.metric("Scope-Fondsrating", "C")
-    st.caption(f"Ratingstand {PROFILE_AS_OF}")
     p1, p2, p3, p4 = st.columns(4)
     p1.metric("Fondsauflegung", "03.06.2013")
     p2.metric("Ertragsverwendung", "Ausschüttend")
@@ -450,15 +443,7 @@ with profile_tab:
     top_sector_total = sum(INDUSTRIES.values())
     top_holding_total = sum(TOP_HOLDINGS.values())
     top_sector_share = de_num(top_sector_total, 1)
-    st.caption(f"Top-10-Branchen: {top_sector_share}% · Top-10-Positionen: {de_num(top_holding_total, 1)}% · Stand {PROFILE_AS_OF}")
     
-
-    with st.expander("Kosten und Ratings"):
-        st.markdown(
-            """- Jährliche Verwaltungsvergütung: **1,86 %**; Transaktionskosten: **0,40 %**; erfolgsabhängige Vergütung: **0,41 %** unter bestimmten Voraussetzungen (Kostenstand der Präsentation: 01.10.2026).
-- Maximaler Ausgabeaufschlag: **3,610 %**; nicht in der Kursrendite enthalten.
-- Ratings zum 30.09.2026: Morningstar **3/5 Sterne**; Scope **C**. """
-        )
 
 with fund_tab:
     performance = go.Figure()
@@ -476,10 +461,6 @@ with fund_tab:
     r1.metric("Aktueller Rückgang vom Höchststand", pct(fund_stats["current_drawdown_pct"]))
     r2.metric("Höchststand vor dem maximalen Rückgang", de_date(fund_stats["peak_date"]))
     r3.metric("Tiefpunkt des maximalen Rückgangs", de_date(fund_stats["trough_date"]))
-    if fund_stats["recovery_date"] is not None:
-        st.caption(f"Erholung: {de_date(fund_stats['recovery_date'])} · {fund_stats['recovery_days']} Tage nach dem Tiefpunkt")
-    else:
-        st.caption(f"Bis {de_date(end_date)} nicht erholt · {fund_stats['underwater_days']} Tage unter dem Höchststand")
 
     risk1, risk2, risk3, risk4, risk5 = st.columns(5)
     risk1.metric("Abwärtsabweichung p. a.", f"{fund_stats['downside_deviation_pct']:.2f}%".replace(".", ",") if np.isfinite(fund_stats["downside_deviation_pct"]) else "k. A.")
@@ -487,13 +468,12 @@ with fund_tab:
     risk3.metric("Historischer Tages-VaR · 95 %", pct(fund_stats["var_95_pct"]))
     risk4.metric("Historischer Tages-CVaR · 95 %", pct(fund_stats["cvar_95_pct"]))
     risk5.metric("Anteil positiver Beobachtungen", f"{fund_stats['positive_days_pct']:.1f}%".replace(".", ",") if np.isfinite(fund_stats["positive_days_pct"]) else "k. A.")
-    st.caption("Abwärtsabweichung und Sortino: 0 %-Ziel, annualisiert mit 252 Tagen. VaR/CVaR: historisches 5-%-Quantil bzw. dessen Durchschnitt; keine Prognose.")
 
     best_date = fund_dates_indexed["Fund_Return"].idxmax()
     worst_date = fund_dates_indexed["Fund_Return"].idxmin()
     best, worst = st.columns(2)
-    best.metric("Bester beobachteter Tageswert", pct(fund_stats["best_day_pct"]), help=f"Beobachtungstag: {de_date(best_date)}")
-    worst.metric("Schlechtester beobachteter Tageswert", pct(fund_stats["worst_day_pct"]), help=f"Beobachtungstag: {de_date(worst_date)}")
+    best.metric("Bester Tageswert", pct(fund_stats["best_day_pct"]))
+    worst.metric("Schlechtester Tageswert", pct(fund_stats["worst_day_pct"]))
 
     monthly_source = fund.dropna(subset=["Fund_Return"]).copy()
     monthly = monthly_source.groupby(monthly_source["Date"].dt.to_period("M"))["Fund_Return"].apply(lambda values: (1.0 + values).prod() - 1.0)
@@ -503,17 +483,13 @@ with fund_tab:
     monthly_chart.update_layout(title="Aufgezinste monatliche Fondskursrenditen", xaxis_title="Monat", yaxis_title="Rendite (%)", template="plotly_white", xaxis_tickformat="%m.%Y")
     st.plotly_chart(style_deka_chart(monthly_chart), use_container_width=True)
     monthly_positive = int((monthly > 0).sum())
-    st.caption(f"Positive Monate: {monthly_positive} von {len(monthly)} · erster Monat ab letzter 2025-Beobachtung")
 
 with benchmark_tab:
-    st.subheader("Deka-Referenzindex: 80 % MDAX / 20 % SDAX")
-    st.caption("Yahoo Finance: ^MDAXI und ^SDAXI · 80/20, täglich neu gewichtet")
     benchmark_error = None
     benchmark = None
     try:
         end_exclusive = (end_date + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-        with st.spinner("Yahoo-Finance-Indexdaten für die Excel-Beobachtungstage werden geladen …"):
-            index_data = download_yahoo_indices(start_date.strftime("%Y-%m-%d"), end_exclusive)
+        index_data = download_yahoo_indices(start_date.strftime("%Y-%m-%d"), end_exclusive)
         benchmark = make_benchmark(index_data, fund_dates)
     except Exception as exc:
         benchmark_error = str(exc)
@@ -529,8 +505,6 @@ with benchmark_tab:
         gap_pp = fund_return - benchmark_return
         benchmark_stats = calculate_metrics(benchmark["Benchmark_Return"], benchmark["Benchmark_Wealth"])
 
-        st.warning("Fondsrendite ohne Ausschüttungen, Yahoo-Indizes inklusive Dividenden. Die täglich neu gewichtete 80/20-Reihe ist selbst berechnet; die Renditedifferenz ist kein Alpha.")
-
         b1, b2, b3, b4 = st.columns(4)
         b1.metric("Fondskursrendite", pct(fund_return))
         b2.metric("Yahoo-Referenzindexrendite 80/20", pct(benchmark_return))
@@ -539,15 +513,13 @@ with benchmark_tab:
 
         dax_prices = None
         try:
-            with st.spinner("Yahoo-DAX-Daten für die Excel-Stichtage werden geladen …"):
-                dax_prices = download_yahoo_dax(start_date.strftime("%Y-%m-%d"), end_exclusive).reindex(fund_dates)
+            dax_prices = download_yahoo_dax(start_date.strftime("%Y-%m-%d"), end_exclusive).reindex(fund_dates)
             if dax_prices.isna().any():
                 missing_dax_dates = dax_prices[dax_prices.isna()].index
                 examples = ", ".join(date.strftime("%d.%m.%Y") for date in missing_dax_dates[:5])
-                st.warning(f"Der DAX wird im Diagramm und in der Tabelle ausgelassen, da für {len(missing_dax_dates)} Excel-Stichtag(e) Yahoo-Schlusskurse fehlen (z. B. {examples}). Es werden keine Werte fortgeschrieben.")
                 dax_prices = None
-        except Exception as exc:
-            st.warning(f"Yahoo-DAX-Daten sind derzeit nicht verfügbar; das Diagramm behält die bisherigen Fonds- und Referenzindexreihen bei. Fehlerdetails: {exc}")
+        except Exception:
+            dax_prices = None
 
         comparison = go.Figure()
         comparison.add_trace(go.Scatter(x=fund["Date"], y=fund["Fund_Wealth"], mode="lines", name="Fondskursrendite", line={"color": "#C8102E", "width": 3}))
@@ -557,8 +529,6 @@ with benchmark_tab:
             comparison.add_trace(go.Scatter(x=dax_wealth.index, y=dax_wealth, mode="lines", name="DAX (^GDAXI)", line={"color": "#829CA4", "width": 2}))
         comparison.update_layout(title="Fonds, 80/20-Referenzindex und DAX an identischen Excel-Stichtagen", xaxis_title="Datum", yaxis_title="Entwicklung (erster Excel-Stichtag = 100)", template="plotly_white", hovermode="x unified")
         st.plotly_chart(style_deka_chart(comparison), use_container_width=True)
-        st.subheader("Wertentwicklung")
-        st.caption("Fondskursrendite aus der Excel-Reihe, 80/20-MDAX-/SDAX-Referenzindex und Yahoo-DAX (^GDAXI), jeweils an denselben Excel-Beobachtungstagen.")
 
         fund_wealth_by_date = fund.set_index("Date")["Fund_Wealth"]
         benchmark_wealth_by_date = benchmark["Benchmark_Wealth"]
@@ -609,7 +579,6 @@ with benchmark_tab:
             else:
                 styled_returns = styler.applymap(return_color, subset=style_subset)
             st.dataframe(styled_returns, hide_index=True, use_container_width=True)
-        st.caption("Excel enthält nur Fondspreise; Kosten und getrennte Brutto-/Nettorenditen sind nicht ausgewiesen.")
 
         pct_metrics = ["Rendite", "Volatilität p. a.", "Abwärtsabweichung p. a.", "Maximaler Verlust (Drawdown)", "Aktueller Abstand zum Höchststand"]
         fund_risk_values = [fund_stats["return_pct"], fund_stats["volatility_pct"], fund_stats["downside_deviation_pct"], fund_stats["sortino_ratio"], fund_stats["max_drawdown_pct"], fund_stats["current_drawdown_pct"]]
@@ -633,16 +602,6 @@ with benchmark_tab:
             a2.metric("Beta zum 80/20-Referenzindex", f"{beta:.2f}".replace(".", ","))
             a3.metric("Nachbildungsfehler p. a.", f"{tracking_error:.2f}%".replace(".", ","))
             a4.metric("Information Ratio", f"{information_ratio:.2f}".replace(".", ",") if np.isfinite(information_ratio) else "k. A.")
-            st.caption("Kennzahlen nutzen identische Stichtage; wegen unterschiedlicher Dividendenbehandlung nur indikativ.")
-        if gap_pp > 0.05:
-            st.caption(f"Kursrendite {gap_pp:+.2f} Prozentpunkte über dem 80/20-Index · Renditebasis unterschiedlich")
-        elif gap_pp < -0.05:
-            st.caption(f"Kursrendite {gap_pp:+.2f} Prozentpunkte unter dem 80/20-Index · Renditebasis unterschiedlich")
-        else:
-            st.caption("Fonds und 80/20-Index lagen nahe beieinander · Renditebasis unterschiedlich")
-
-        st.subheader("Fonds, 80/20-Referenzindex und DAX an identischen Excel-Stichtagen")
-        st.caption("Fondspreis und kumulierte Renditen an den Excel-Stichtagen · Reihen auf 100 normiert")
         if dax_prices is not None:
             comparison_table = pd.DataFrame({
                 "Excel-Stichtag": fund_dates.strftime("%d.%m.%Y"),
@@ -665,24 +624,9 @@ with benchmark_tab:
             )
 
 with data_tab:
-    st.subheader("Quelldaten")
-    st.caption(f"Quelle: {FUND_FILE.name} · {len(fund)} Beobachtungen · Yahoo Finance ^MDAXI / ^SDAXI · Referenz 80/20")
-    st.markdown(
-        "**Berechnungen**\n"
-        "- Kursrendite seit Jahresbeginn 2026 = letzter Excel-Fondspreis 2026 / letzter Excel-Fondspreis 2025 − 1 (letzte Beobachtung 2025 als Basis).\n"
-        "- Tägliche Fondsrendite = heutiger Excel-Fondspreis / vorheriger Excel-Fondspreis − 1.\n"
-        "- Tägliche Referenzindexrendite = 0,80 × tägliche MDAX-Rendite + 0,20 × tägliche SDAX-Rendite; der Referenzindex wird täglich aufgezinzt und zu den Excel-Stichtagen ausgewiesen.\n"
-        "- Beide Vergleichsreihen beginnen am ersten Excel-Stichtag bei 100 und enden am letzten Excel-Stichtag.\n"
-        "- Volatilität p. a. = Stichprobenstandardabweichung der Tagesrenditen × √252.\n"
-        "- Maximaler Drawdown = niedrigster Tageswert im Verhältnis zum vorherigen Höchststand.\n"
-        "- Abwärtsabweichung und Sortino-Ratio verwenden ein tägliches Ziel von 0 %; der historische VaR/CVaR basiert auf den schlechtesten beobachteten 5 %.\n"
-        "- Die Renditedifferenz wird in Prozentpunkten gemessen; sie ist kein risikobereinigtes Alpha."
-    )
     export = fund[["Date", "Price", "Fund_Return", "Fund_Wealth"]].copy()
     export.columns = ["Datum", "Fondspreis (EUR)", "Tagesrendite", "Wertentwicklung (Basis 100)"]
-    st.download_button("Fondsberechnungstabelle herunterladen", export.to_csv(index=False).encode("utf-8-sig"), file_name="deka_fondsberechnungen.csv", mime="text/csv")
     st.dataframe(style_deka_table(export.tail(20)), hide_index=True, use_container_width=True)
 
 st.divider()
-st.caption("Fondsdaten: Excel · Referenzindex: Yahoo Finance, Cache 1 Stunde.")
 
