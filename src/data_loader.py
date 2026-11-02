@@ -14,7 +14,7 @@ def load_and_preprocess_data(file_source):
     # Row 2 contains column headers ['Datum', 'Fondspreise des...']
     # Rows 3 onwards contain the actual time series data
     data = df_raw.iloc[3:].copy()
-    data = data.iloc[:, :2]  # Keep first two columns
+    data = data.iloc[:, :2]
     data.columns = ['Date', 'Price']
 
     # Drop any potential NaN rows
